@@ -26,6 +26,19 @@ def error_response(
     return JSONResponse(status_code=status_code, content=content)
 
 
+def sanitize_validation_errors(errors: list[dict[str, object]]) -> list[dict[str, object]]:
+    sanitized_errors: list[dict[str, object]] = []
+    for error in errors:
+        sanitized_errors.append(
+            {
+                key: value
+                for key, value in error.items()
+                if key not in {"input", "ctx"}
+            }
+        )
+    return sanitized_errors
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppException)
     async def handle_app_exception(
@@ -47,7 +60,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             code="validation_error",
             message="Dados de entrada invalidos.",
-            details=exc.errors(),
+            details=sanitize_validation_errors(exc.errors()),
         )
 
     @app.exception_handler(Exception)

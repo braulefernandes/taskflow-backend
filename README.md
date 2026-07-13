@@ -123,6 +123,71 @@ organization_members
   role: ADMIN | MANAGER | AGENT | REQUESTER
 ```
 
+## Cadastro inicial
+
+Endpoint:
+
+```text
+POST /api/v1/auth/register
+```
+
+Cria, na mesma transacao, o usuario inicial, a organizacao e o membership ativo com papel `ADMIN`. O cadastro nao retorna token e nao realiza login automatico.
+
+Request:
+
+```json
+{
+  "user_name": "Ana Silva",
+  "email": "ana@example.com",
+  "password": "Senha123",
+  "organization_name": "Acme Suporte"
+}
+```
+
+Regras:
+
+- `user_name`: obrigatorio, ate 255 caracteres, com espacos extras removidos.
+- `email`: obrigatorio, valido, normalizado para minusculas e unico.
+- `password`: entre 8 e 128 caracteres, contendo letras e numeros.
+- `organization_name`: obrigatorio, ate 255 caracteres, com espacos extras removidos.
+- o slug da organizacao e derivado do nome, normaliza acentos e caracteres especiais, e recebe sufixo numerico em caso de colisao, como `acme`, `acme-2`.
+
+Response `201 Created`:
+
+```json
+{
+  "user": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": "Ana Silva",
+    "email": "ana@example.com",
+    "avatar_url": null,
+    "is_active": true,
+    "created_at": "2026-07-13T09:00:00Z"
+  },
+  "organization": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": "Acme Suporte",
+    "slug": "acme-suporte",
+    "created_at": "2026-07-13T09:00:00Z"
+  },
+  "membership": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "role": "ADMIN",
+    "is_active": true,
+    "created_at": "2026-07-13T09:00:00Z"
+  }
+}
+```
+
+Erros esperados:
+
+- `422 validation_error`: dados invalidos.
+- `409 email_already_registered`: e-mail ja cadastrado.
+- `409 organization_slug_conflict`: nao foi possivel gerar slug unico.
+- `500 registration_persistence_error`: falha de persistencia durante o cadastro.
+
+Campos sensiveis como senha, hash da senha e tokens nunca sao retornados.
+
 ## Testes
 
 ```powershell
