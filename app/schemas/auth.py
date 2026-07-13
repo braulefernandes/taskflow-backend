@@ -77,3 +77,21 @@ class RegisterResponse(BaseModel):
     user: UserPublic
     organization: OrganizationPublic
     membership: MembershipPublic
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr = Field(max_length=320, examples=["ana@example.com"])
+    password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH, examples=["Senha123"])
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int

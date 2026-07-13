@@ -11,6 +11,14 @@ class AuthRepository:
     def get_user_by_email(self, email: str) -> User | None:
         return self.db.scalar(select(User).where(User.email == email))
 
+    def get_active_membership_for_user(self, user: User) -> OrganizationMember | None:
+        return self.db.scalar(
+            select(OrganizationMember)
+            .where(OrganizationMember.user_id == user.id)
+            .where(OrganizationMember.is_active.is_(True))
+            .order_by(OrganizationMember.created_at.asc())
+        )
+
     def organization_slug_exists(self, slug: str) -> bool:
         return self.db.scalar(select(Organization.id).where(Organization.slug == slug)) is not None
 
