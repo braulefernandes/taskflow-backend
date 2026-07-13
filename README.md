@@ -289,6 +289,39 @@ Erros esperados:
 
 O endpoint nao retorna senha, hash de senha, token, segredo ou timestamps desnecessarios.
 
+## Logout
+
+Endpoint:
+
+```text
+POST /api/v1/auth/logout
+```
+
+Autenticacao:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+Estrategia: JWT stateless. No MVP nao existe blacklist, tabela de revogacao, Redis, refresh token ou rotacao de sessoes. Por isso, o endpoint valida a autenticacao e retorna sucesso, mas nao revoga o token no backend. A responsabilidade do cliente e descartar o token localmente e encerrar a sessao na interface.
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Logout registrado no cliente. Descarte o token localmente.",
+  "token_revoked": false
+}
+```
+
+Comportamento:
+
+- token ausente, malformado, invalido ou expirado retorna `401 not_authenticated`;
+- chamadas repetidas com o mesmo token valido retornam sucesso;
+- o token continua tecnicamente valido ate sua expiracao natural;
+- riscos e limitacoes: se um token for copiado antes do logout, ele pode ser usado ate expirar;
+- evolucao futura: refresh token com rotacao e revogacao persistente.
+
 ## Testes
 
 ```powershell

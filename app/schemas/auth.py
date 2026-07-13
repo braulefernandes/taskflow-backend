@@ -97,6 +97,11 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
+class LogoutResponse(BaseModel):
+    message: str
+    token_revoked: bool = False
+
+
 class MeUser(BaseModel):
     id: uuid.UUID
     name: str
