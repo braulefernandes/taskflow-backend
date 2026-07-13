@@ -13,7 +13,7 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Variáveis de ambiente
+# Variaveis de ambiente
 .env
 .env.local
 .env.development
@@ -35,5 +35,5 @@ Thumbs.db
 # Logs
 *.log
 
-# Alembic temporário
+# Alembic temporario
 alembic/versions/__pycache__/
