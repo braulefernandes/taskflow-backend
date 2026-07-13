@@ -103,6 +103,26 @@ Criar migrations futuras com autogenerate:
 alembic revision --autogenerate -m "mensagem"
 ```
 
+## Modelo inicial de autenticacao
+
+Esta branch define apenas a modelagem ORM e a migration inicial de autenticacao. Nao ha endpoints de cadastro, login, JWT ou recuperacao de senha.
+
+Diagrama textual:
+
+```text
+users
+  1:N organization_members
+  1:N password_reset_tokens
+
+organizations
+  1:N organization_members
+
+organization_members
+  N:1 users
+  N:1 organizations
+  role: ADMIN | MANAGER | AGENT | REQUESTER
+```
+
 ## Testes
 
 ```powershell
