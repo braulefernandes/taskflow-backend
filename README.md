@@ -328,7 +328,16 @@ Comportamento:
 pytest
 ```
 
-Os testes carregam configuracoes de ambiente de teste e nao devem usar banco de producao.
+Os testes carregam configuracoes de ambiente de teste e nao devem usar banco de producao. A suite rapida usa SQLite em memoria para isolar dados por teste e manter repetibilidade. Essa escolha cobre os fluxos HTTP e regras de negocio, mas pode mascarar diferencas de PostgreSQL em tipos, enum e DDL.
+
+Para validar migrations em PostgreSQL, configure uma URL explicita de teste:
+
+```powershell
+$env:TEST_DATABASE_URL="postgresql+psycopg://taskflow_test:taskflow_test_password@localhost:5432/taskflow_test"
+python scripts/validate_migrations.py
+```
+
+O script recusa URLs que nao sejam PostgreSQL ou que nao parecam apontar para banco de teste. O procedimento executa `upgrade head`, `downgrade base` e novo `upgrade head`.
 
 ## Estrutura inicial
 
