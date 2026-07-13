@@ -1,0 +1,39 @@
+# Ambiente virtual
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testes
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Variáveis de ambiente
+.env
+.env.local
+.env.development
+.env.production
+
+# Banco local
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Alembic temporário
+alembic/versions/__pycache__/
