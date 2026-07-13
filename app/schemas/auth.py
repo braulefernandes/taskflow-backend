@@ -95,3 +95,35 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class MeUser(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: EmailStr
+    avatar_url: str | None
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MeOrganization(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MeMembership(BaseModel):
+    id: uuid.UUID
+    role: OrganizationRole
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MeResponse(BaseModel):
+    user: MeUser
+    organization: MeOrganization
+    membership: MeMembership

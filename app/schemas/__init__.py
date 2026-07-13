@@ -1,5 +1,9 @@
 from app.schemas.auth import (
     LoginRequest,
+    MeMembership,
+    MeOrganization,
+    MeResponse,
+    MeUser,
     MembershipPublic,
     OrganizationPublic,
     RegisterRequest,
@@ -10,6 +14,10 @@ from app.schemas.auth import (
 
 __all__ = [
     "LoginRequest",
+    "MeMembership",
+    "MeOrganization",
+    "MeResponse",
+    "MeUser",
     "MembershipPublic",
     "OrganizationPublic",
     "RegisterRequest",

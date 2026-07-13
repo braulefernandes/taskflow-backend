@@ -214,7 +214,7 @@ Regras:
 - usuario inativo nao autentica;
 - usuario sem membership ativo nao autentica;
 - e-mail inexistente e senha incorreta retornam a mesma mensagem generica;
-- o login nao cria refresh token, nao executa logout e nao implementa `/auth/me`.
+- o login nao cria refresh token e nao executa logout.
 
 Response `200 OK`:
 
@@ -242,6 +242,52 @@ Erros esperados:
 - `422 validation_error`: payload invalido.
 
 Refresh token e rotacao de sessoes ficam como melhoria futura.
+
+## Usuario autenticado
+
+Endpoint:
+
+```text
+GET /api/v1/auth/me
+```
+
+Autenticacao:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+O token e validado pela assinatura, expiracao e `sub`. A API busca o usuario no banco, exige usuario ativo e exige membership ativo na organizacao indicada pelo token.
+
+Exemplo de resposta `200 OK`:
+
+```json
+{
+  "user": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": "Ana Silva",
+    "email": "ana@example.com",
+    "avatar_url": null,
+    "is_active": true
+  },
+  "organization": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": "Acme Suporte",
+    "slug": "acme-suporte"
+  },
+  "membership": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "role": "ADMIN",
+    "is_active": true
+  }
+}
+```
+
+Erros esperados:
+
+- `401 not_authenticated`: token ausente, malformado, invalido, expirado, usuario inexistente/inativo ou membership inexistente/inativo.
+
+O endpoint nao retorna senha, hash de senha, token, segredo ou timestamps desnecessarios.
 
 ## Testes
 

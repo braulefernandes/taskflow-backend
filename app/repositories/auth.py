@@ -1,4 +1,7 @@
+import uuid
+
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import Session
 
 from app.models import Organization, OrganizationMember, OrganizationRole, User
@@ -11,13 +14,25 @@ class AuthRepository:
     def get_user_by_email(self, email: str) -> User | None:
         return self.db.scalar(select(User).where(User.email == email))
 
-    def get_active_membership_for_user(self, user: User) -> OrganizationMember | None:
-        return self.db.scalar(
+    def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
+        return self.db.get(User, user_id)
+
+    def get_active_membership_for_user(
+        self,
+        user: User,
+        organization_id: uuid.UUID | None = None,
+    ) -> OrganizationMember | None:
+        statement = (
             select(OrganizationMember)
+            .options(joinedload(OrganizationMember.organization))
             .where(OrganizationMember.user_id == user.id)
             .where(OrganizationMember.is_active.is_(True))
             .order_by(OrganizationMember.created_at.asc())
         )
+        if organization_id is not None:
+            statement = statement.where(OrganizationMember.organization_id == organization_id)
+
+        return self.db.scalar(statement)
 
     def organization_slug_exists(self, slug: str) -> bool:
         return self.db.scalar(select(Organization.id).where(Organization.slug == slug)) is not None
