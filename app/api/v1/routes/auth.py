@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext, get_current_auth_context
 from app.db.session import get_db
-from app.schemas.auth import LoginRequest, MeResponse, RegisterRequest, RegisterResponse, TokenResponse
+from app.schemas.auth import (
+    LoginRequest,
+    LogoutResponse,
+    MeResponse,
+    RegisterRequest,
+    RegisterResponse,
+    TokenResponse,
+)
 from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth")
@@ -32,6 +39,14 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
         access_token=result.access_token,
         token_type="bearer",
         expires_in=result.expires_in,
+    )
+
+
+@router.post("/logout", response_model=LogoutResponse)
+def logout(_context: AuthContext = Depends(get_current_auth_context)) -> LogoutResponse:
+    return LogoutResponse(
+        message="Logout registrado no cliente. Descarte o token localmente.",
+        token_revoked=False,
     )
 
 

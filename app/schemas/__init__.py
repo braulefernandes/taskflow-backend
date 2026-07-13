@@ -1,5 +1,6 @@
 from app.schemas.auth import (
     LoginRequest,
+    LogoutResponse,
     MeMembership,
     MeOrganization,
     MeResponse,
@@ -14,6 +15,7 @@ from app.schemas.auth import (
 
 __all__ = [
     "LoginRequest",
+    "LogoutResponse",
     "MeMembership",
     "MeOrganization",
     "MeResponse",
