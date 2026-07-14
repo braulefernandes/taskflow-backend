@@ -15,6 +15,7 @@ from app.schemas.tickets import (
     TicketAssigneeUpdateRequest,
     TicketListResponse,
     TicketResponse,
+    TicketStatusUpdateRequest,
     TicketUpdateRequest,
 )
 from app.services.tickets import TicketService
@@ -73,5 +74,17 @@ def update_ticket_assignee(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     return TicketService(db).update_assignee(
+        context=context, ticket_id=ticket_id, payload=payload
+    )
+
+
+@router.patch("/{ticket_id}/status", response_model=TicketResponse)
+def update_ticket_status(
+    ticket_id: uuid.UUID,
+    payload: TicketStatusUpdateRequest,
+    context: AuthContext = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    return TicketService(db).update_status(
         context=context, ticket_id=ticket_id, payload=payload
     )

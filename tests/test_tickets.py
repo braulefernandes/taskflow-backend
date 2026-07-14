@@ -599,3 +599,286 @@ def test_external_ticket_is_hidden_on_assignment(
         json={"assignee_id": str(agent.id)},
     )
     assert response.status_code == 404
+
+
+def status_path(ticket: Ticket) -> str:
+    return f"/api/v1/tickets/{ticket.id}/status"
+
+
+def test_valid_status_transition_sets_utc_started_at(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=agent)
+
+    response = client.patch(
+        status_path(ticket),
+        headers=headers(admin, membership),
+        json={"status": "IN_PROGRESS"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "IN_PROGRESS"
+    started_at = datetime.fromisoformat(response.json()["started_at"])
+    assert started_at.tzinfo is not None
+    assert started_at.utcoffset() == timedelta(0)
+
+
+def test_invalid_status_transition_is_rejected(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=agent)
+
+    response = client.patch(
+        status_path(ticket),
+        headers=headers(admin, membership),
+        json={"status": "COMPLETED"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "invalid_status_transition"
+
+
+def test_started_at_is_not_overwritten_after_later_progress_entry(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=agent)
+    path = status_path(ticket)
+
+    first = client.patch(
+        path, headers=headers(admin, membership), json={"status": "IN_PROGRESS"}
+    )
+    client.patch(path, headers=headers(admin, membership), json={"status": "WAITING"})
+    second = client.patch(
+        path, headers=headers(admin, membership), json={"status": "IN_PROGRESS"}
+    )
+    assert second.json()["started_at"] == first.json()["started_at"]
+
+
+def test_completion_and_controlled_reopening_manage_completed_at(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=agent)
+    ticket.status = TicketStatus.IN_PROGRESS
+    ticket.started_at = datetime.now(UTC) - timedelta(hours=1)
+    db_session.commit()
+
+    completed = client.patch(
+        status_path(ticket),
+        headers=headers(admin, membership),
+        json={"status": "COMPLETED"},
+    )
+    reopened = client.patch(
+        status_path(ticket),
+        headers=headers(admin, membership),
+        json={"status": "IN_PROGRESS"},
+    )
+
+    assert completed.status_code == 200
+    assert completed.json()["completed_at"] is not None
+    assert datetime.fromisoformat(
+        completed.json()["completed_at"]
+    ).utcoffset() == timedelta(0)
+    assert reopened.status_code == 200
+    assert reopened.json()["status"] == "IN_PROGRESS"
+    assert reopened.json()["completed_at"] is None
+    assert reopened.json()["cancelled_at"] is None
+
+
+def test_waiting_can_be_completed(client: TestClient, db_session: Session) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=agent)
+    ticket.status = TicketStatus.WAITING
+    db_session.commit()
+    response = client.patch(
+        status_path(ticket),
+        headers=headers(admin, membership),
+        json={"status": "COMPLETED"},
+    )
+    assert response.status_code == 200
+
+
+def test_assigned_agent_can_change_status_but_other_agent_cannot(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, _ = create_account(db_session, OrganizationRole.ADMIN)
+    assigned, _, assigned_membership = create_account(
+        db_session, OrganizationRole.AGENT, organization
+    )
+    other, _, other_membership = create_account(
+        db_session, OrganizationRole.AGENT, organization
+    )
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=assigned)
+
+    allowed = client.patch(
+        status_path(ticket),
+        headers=headers(assigned, assigned_membership),
+        json={"status": "IN_PROGRESS"},
+    )
+    denied = client.patch(
+        status_path(ticket),
+        headers=headers(other, other_membership),
+        json={"status": "WAITING"},
+    )
+    assert allowed.status_code == 200
+    assert denied.status_code == 404
+
+
+def test_agent_who_created_but_is_not_assigned_cannot_change_status(
+    client: TestClient, db_session: Session
+) -> None:
+    agent, organization, membership = create_account(db_session, OrganizationRole.AGENT)
+    responsible, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(
+        db_session, organization, category, agent, assignee=responsible
+    )
+    response = client.patch(
+        status_path(ticket),
+        headers=headers(agent, membership),
+        json={"status": "IN_PROGRESS"},
+    )
+    assert response.status_code == 403
+
+
+def test_requester_cannot_change_operational_status(
+    client: TestClient, db_session: Session
+) -> None:
+    requester, organization, membership = create_account(
+        db_session, OrganizationRole.REQUESTER
+    )
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(
+        db_session, organization, category, requester, assignee=agent
+    )
+    response = client.patch(
+        status_path(ticket),
+        headers=headers(requester, membership),
+        json={"status": "IN_PROGRESS"},
+    )
+    assert response.status_code == 403
+
+
+def test_operational_status_requires_assignee(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    response = client.patch(
+        status_path(ticket),
+        headers=headers(admin, membership),
+        json={"status": "IN_PROGRESS"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "assignee_required_for_status"
+
+
+def test_admin_changes_priority_and_removes_future_due_date(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    future = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+
+    changed = client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={"priority": "URGENT", "due_date": future},
+    )
+    removed = client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={"due_date": None},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["priority"] == "URGENT"
+    assert changed.json()["due_date"] is not None
+    assert removed.json()["due_date"] is None
+
+
+def test_invalid_priority_and_past_due_date_are_rejected(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    path = f"/api/v1/tickets/{ticket.id}"
+
+    invalid_priority = client.patch(
+        path, headers=headers(admin, membership), json={"priority": "CRITICAL"}
+    )
+    past_due = client.patch(
+        path,
+        headers=headers(admin, membership),
+        json={"due_date": (datetime.now(UTC) - timedelta(days=1)).isoformat()},
+    )
+    assert invalid_priority.status_code == 422
+    assert past_due.status_code == 422
+    assert past_due.json()["error"]["code"] == "due_date_in_past"
+
+
+@pytest.mark.parametrize("role", [OrganizationRole.AGENT, OrganizationRole.REQUESTER])
+def test_non_management_roles_cannot_change_priority_or_due_date(
+    role: OrganizationRole, client: TestClient, db_session: Session
+) -> None:
+    user, organization, membership = create_account(db_session, role)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, user)
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(user, membership),
+        json={"priority": "LOW"},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("status", [TicketStatus.COMPLETED, TicketStatus.CANCELLED])
+def test_terminal_ticket_blocks_priority_and_due_date_changes(
+    status: TicketStatus, client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    ticket.status = status
+    db_session.commit()
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={"priority": "HIGH", "due_date": None},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "terminal_ticket_planning_update"
+
+
+def test_cancelled_ticket_has_no_status_transition(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=agent)
+    ticket.status = TicketStatus.CANCELLED
+    db_session.commit()
+    response = client.patch(
+        status_path(ticket),
+        headers=headers(admin, membership),
+        json={"status": "IN_PROGRESS"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "invalid_status_transition"

@@ -13,11 +13,20 @@ from app.repositories.tickets import TicketRepository
 from app.schemas.tickets import (
     TicketAssigneeUpdateRequest,
     TicketCreateRequest,
+    TicketStatusUpdateRequest,
     TicketUpdateRequest,
 )
 
 
 class TicketService:
+    STATUS_TRANSITIONS = {
+        TicketStatus.PENDING: {TicketStatus.IN_PROGRESS, TicketStatus.WAITING},
+        TicketStatus.IN_PROGRESS: {TicketStatus.WAITING, TicketStatus.COMPLETED},
+        TicketStatus.WAITING: {TicketStatus.IN_PROGRESS, TicketStatus.COMPLETED},
+        TicketStatus.COMPLETED: {TicketStatus.IN_PROGRESS},
+        TicketStatus.CANCELLED: set(),
+    }
+
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repository = TicketRepository(db)
@@ -75,6 +84,8 @@ class TicketService:
     ) -> Ticket:
         ticket = self.get_ticket(context=context, ticket_id=ticket_id)
         self._ensure_can_edit(context=context, ticket=ticket)
+        if payload.model_fields_set & {"priority", "due_date"}:
+            self._ensure_can_change_planning(context=context, ticket=ticket)
         if "category_id" in payload.model_fields_set:
             assert payload.category_id is not None
             self._get_active_category(context=context, category_id=payload.category_id)
@@ -82,6 +93,53 @@ class TicketService:
             self._validate_due_date(payload.due_date)
         for field in payload.model_fields_set:
             setattr(ticket, field, getattr(payload, field))
+        try:
+            self.db.commit()
+            return self.get_ticket(context=context, ticket_id=ticket.id)
+        except (IntegrityError, SQLAlchemyError) as exc:
+            self.db.rollback()
+            raise persistence_error() from exc
+
+    def update_status(
+        self,
+        *,
+        context: AuthContext,
+        ticket_id: uuid.UUID,
+        payload: TicketStatusUpdateRequest,
+    ) -> Ticket:
+        ticket = self.get_ticket(context=context, ticket_id=ticket_id)
+        self._ensure_can_change_status(context=context, ticket=ticket)
+        if payload.status not in self.STATUS_TRANSITIONS[ticket.status]:
+            raise AppException(
+                "Transicao de status invalida.",
+                status_code=HTTPStatus.CONFLICT,
+                code="invalid_status_transition",
+            )
+        if (
+            payload.status
+            in {
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.WAITING,
+                TicketStatus.COMPLETED,
+            }
+            and ticket.assignee_id is None
+        ):
+            raise AppException(
+                "A solicitacao deve possuir responsavel para este status.",
+                status_code=HTTPStatus.CONFLICT,
+                code="assignee_required_for_status",
+            )
+
+        now = datetime.now(UTC)
+        if payload.status == TicketStatus.IN_PROGRESS:
+            if ticket.started_at is None:
+                ticket.started_at = now
+            if ticket.status == TicketStatus.COMPLETED:
+                ticket.completed_at = None
+        elif payload.status == TicketStatus.COMPLETED:
+            ticket.completed_at = now
+
+        ticket.status = payload.status
         try:
             self.db.commit()
             return self.get_ticket(context=context, ticket_id=ticket.id)
@@ -181,6 +239,42 @@ class TicketService:
             and ticket.requester_id == context.user.id
             and ticket.status == TicketStatus.PENDING
             and ticket.assignee_id is None
+        ):
+            return
+        raise AppException(
+            "Papel insuficiente.",
+            status_code=HTTPStatus.FORBIDDEN,
+            code="insufficient_role",
+        )
+
+    @staticmethod
+    def _ensure_can_change_planning(*, context: AuthContext, ticket: Ticket) -> None:
+        if context.membership.role not in {
+            OrganizationRole.ADMIN,
+            OrganizationRole.MANAGER,
+        }:
+            raise AppException(
+                "Papel insuficiente.",
+                status_code=HTTPStatus.FORBIDDEN,
+                code="insufficient_role",
+            )
+        if ticket.status in {TicketStatus.COMPLETED, TicketStatus.CANCELLED}:
+            raise AppException(
+                "Prioridade e prazo nao podem ser alterados em estado terminal.",
+                status_code=HTTPStatus.CONFLICT,
+                code="terminal_ticket_planning_update",
+            )
+
+    @staticmethod
+    def _ensure_can_change_status(*, context: AuthContext, ticket: Ticket) -> None:
+        if context.membership.role in {
+            OrganizationRole.ADMIN,
+            OrganizationRole.MANAGER,
+        }:
+            return
+        if (
+            context.membership.role == OrganizationRole.AGENT
+            and ticket.assignee_id == context.user.id
         ):
             return
         raise AppException(

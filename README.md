@@ -491,6 +491,7 @@ GET   /api/v1/tickets?page=1&page_size=20
 GET   /api/v1/tickets/{id}
 PATCH /api/v1/tickets/{id}
 PATCH /api/v1/tickets/{id}/assignee
+PATCH /api/v1/tickets/{id}/status
 ```
 
 Na criacao, o cliente envia somente `title`, `description`, `category_id`,
@@ -547,8 +548,56 @@ Erros especificos de atribuicao incluem `assignee_membership_inactive`,
 `cancelled_ticket_assignment` e `completed_ticket_assignment`. Responsavel ou
 ticket inexistente/externo retorna `404 resource_not_found`.
 
-Esta entrega nao implementa alteracao de status, cancelamento, comentarios,
-historico, atraso ou filtros avancados.
+### Status, prioridade e prazo
+
+A mudanca de status recebe somente o novo status:
+
+```json
+{
+  "status": "IN_PROGRESS"
+}
+```
+
+Maquina de estados permitida:
+
+```text
+PENDING     -> IN_PROGRESS | WAITING
+IN_PROGRESS -> WAITING | COMPLETED
+WAITING     -> IN_PROGRESS | COMPLETED
+COMPLETED   -> IN_PROGRESS
+CANCELLED   -> nenhuma transicao nesta entrega
+```
+
+`ADMIN` e `MANAGER` alteram o status de qualquer ticket da organizacao.
+`AGENT` altera apenas tickets atribuidos a ele. `REQUESTER` nao altera status
+operacional. `IN_PROGRESS`, `WAITING` e `COMPLETED` exigem responsavel; o status
+`PENDING` pode permanecer sem responsavel.
+
+A primeira entrada em `IN_PROGRESS` preenche `started_at` em UTC e entradas
+posteriores preservam o valor original. A entrada em `COMPLETED` preenche
+`completed_at`; a reabertura controlada para `IN_PROGRESS` limpa
+`completed_at`. `cancelled_at` nao e modificado.
+
+Prioridade e prazo continuam no `PATCH /api/v1/tickets/{id}`:
+
+```json
+{
+  "priority": "URGENT",
+  "due_date": "2026-07-25T18:00:00Z"
+}
+```
+
+Somente `ADMIN` e `MANAGER` podem alterar prioridade ou prazo. O prazo deve
+estar no futuro e pode ser removido com `null`. Tickets `COMPLETED` e
+`CANCELLED` bloqueiam ambas as alteracoes ate eventual reabertura. Valores de
+prioridade fora de `LOW`, `MEDIUM`, `HIGH` e `URGENT` sao rejeitados.
+
+Erros principais: `invalid_status_transition`, `assignee_required_for_status`,
+`terminal_ticket_planning_update`, `due_date_in_past` e `insufficient_role`.
+Nenhuma operacao desta entrega cancela tickets ou calcula atraso.
+
+Esta entrega nao implementa cancelamento, comentarios, historico, atraso ou
+filtros avancados.
 
 ## Recuperacao de senha
 
