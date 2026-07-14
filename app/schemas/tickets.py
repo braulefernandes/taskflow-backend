@@ -1,9 +1,13 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import TicketPriority, TicketStatus
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def normalize_required_text(value: str) -> str:
@@ -109,7 +113,29 @@ class TicketResponse(BaseModel):
     category: CategorySummary
     requester: UserSummary
     assignee: UserSummary | None
+    is_overdue: bool = False
+    overdue_seconds: int = 0
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def calculate_overdue(self) -> "TicketResponse":
+        if self.due_date is None or self.status in {
+            TicketStatus.COMPLETED,
+            TicketStatus.CANCELLED,
+        }:
+            self.is_overdue = False
+            self.overdue_seconds = 0
+            return self
+
+        due_date = (
+            self.due_date
+            if self.due_date.tzinfo is not None
+            else self.due_date.replace(tzinfo=UTC)
+        )
+        seconds = int((utc_now() - due_date.astimezone(UTC)).total_seconds())
+        self.is_overdue = seconds > 0
+        self.overdue_seconds = max(seconds, 0)
+        return self
 
 
 class TicketListResponse(BaseModel):

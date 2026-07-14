@@ -88,3 +88,12 @@ def update_ticket_status(
     return TicketService(db).update_status(
         context=context, ticket_id=ticket_id, payload=payload
     )
+
+
+@router.post("/{ticket_id}/cancel", response_model=TicketResponse)
+def cancel_ticket(
+    ticket_id: uuid.UUID,
+    context: AuthContext = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    return TicketService(db).cancel_ticket(context=context, ticket_id=ticket_id)
