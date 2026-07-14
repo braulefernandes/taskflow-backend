@@ -13,9 +13,36 @@ from app.schemas.auth import (
     RegisterResponse,
     TokenResponse,
 )
+from app.schemas.password_reset import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
+)
 from app.services.auth import AuthService
+from app.services.email import EmailSender, get_email_sender
+from app.services.password_reset import PasswordResetService
 
 router = APIRouter(prefix="/auth")
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+    email_sender: EmailSender = Depends(get_email_sender),
+) -> ForgotPasswordResponse:
+    message = PasswordResetService(db, email_sender).request_reset(payload)
+    return ForgotPasswordResponse(message=message)
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+) -> ResetPasswordResponse:
+    message = PasswordResetService(db).reset_password(payload)
+    return ResetPasswordResponse(message=message)
 
 
 @router.post(

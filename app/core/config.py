@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,7 +14,26 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(default="change-me-in-local-env", alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    password_reset_token_expire_minutes: int = Field(
+        default=30,
+        alias="PASSWORD_RESET_TOKEN_EXPIRE_MINUTES",
+        gt=0,
+    )
     frontend_url: str = Field(default="http://localhost:3000", alias="FRONTEND_URL")
+    email_backend: Literal["development", "smtp"] = Field(
+        default="development",
+        alias="EMAIL_BACKEND",
+    )
+    email_from_address: str = Field(
+        default="no-reply@taskflow.local",
+        alias="EMAIL_FROM_ADDRESS",
+    )
+    smtp_host: str | None = Field(default=None, alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_username: str | None = Field(default=None, alias="SMTP_USERNAME")
+    smtp_password: SecretStr | None = Field(default=None, alias="SMTP_PASSWORD")
+    smtp_use_tls: bool = Field(default=True, alias="SMTP_USE_TLS")
+    smtp_timeout_seconds: int = Field(default=10, alias="SMTP_TIMEOUT_SECONDS")
     backend_cors_origins: str = Field(default="", alias="BACKEND_CORS_ORIGINS")
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
 
@@ -34,6 +54,10 @@ class Settings(BaseSettings):
         if self.frontend_url and self.frontend_url not in origins:
             origins.append(self.frontend_url)
         return origins
+
+    @property
+    def password_reset_url(self) -> str:
+        return f"{self.frontend_url.rstrip('/')}/redefinir-senha"
 
 
 @lru_cache

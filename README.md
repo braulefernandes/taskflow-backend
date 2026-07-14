@@ -45,7 +45,16 @@ Configuracoes principais:
 - `JWT_SECRET_KEY`
 - `JWT_ALGORITHM`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
+- `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`
 - `FRONTEND_URL`
+- `EMAIL_BACKEND`
+- `EMAIL_FROM_ADDRESS`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_USE_TLS`
+- `SMTP_TIMEOUT_SECONDS`
 - `BACKEND_CORS_ORIGINS`
 - `API_V1_PREFIX`
 
@@ -471,6 +480,69 @@ Erros principais:
 - `404 resource_not_found`: categoria inexistente ou de outra organizacao;
 - `409 category_already_exists`: nome normalizado duplicado na organizacao;
 - `422 validation_error`: payload ou nome invalido.
+
+## Recuperacao de senha
+
+Endpoints:
+
+```text
+POST /api/v1/auth/forgot-password
+POST /api/v1/auth/reset-password
+```
+
+Solicitacao:
+
+```json
+{
+  "email": "ana@example.com"
+}
+```
+
+E-mails sao normalizados. A resposta e sempre `200` com a mesma mensagem,
+independentemente de o e-mail existir, estar inativo ou nao estar cadastrado:
+
+```json
+{
+  "message": "Se o e-mail estiver cadastrado, enviaremos instrucoes para redefinir a senha."
+}
+```
+
+Para usuarios ativos, a API gera 32 bytes aleatorios com
+`secrets.token_urlsafe`, armazena somente o SHA-256 hexadecimal e monta a URL
+`FRONTEND_URL/redefinir-senha?token=...`. A validade e configurada por
+`PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`. Uma nova solicitacao invalida tokens
+anteriores ainda nao usados.
+
+Redefinicao:
+
+```json
+{
+  "token": "token-recebido-por-email",
+  "new_password": "NovaSenha123"
+}
+```
+
+O backend calcula o hash do token recebido, bloqueia o registro durante a
+transacao e valida expiracao, `used_at` e usuario ativo. Senha e `used_at` sao
+atualizados na mesma transacao. O token nao autentica o usuario e nao pode ser
+reutilizado. Token invalido, expirado, usado ou associado a usuario inativo
+retorna o mesmo erro `400 invalid_reset_token`.
+
+### Envio de e-mail
+
+`EMAIL_BACKEND=development` usa um adapter seguro que nao envia mensagens e nao
+registra destinatario, URL ou token. `EMAIL_BACKEND=smtp` habilita o adapter
+SMTP real. Host, porta, usuario, senha, remetente, TLS e timeout sao definidos
+somente por variaveis de ambiente; nao existem credenciais hardcoded.
+
+Para testes, `EmailSender` pode ser substituido por um fake por dependency
+override. O fake captura a mensagem em memoria sem acessar rede.
+
+O envio ocorre antes do commit do token para permitir rollback quando o adapter
+falha. Existe uma pequena janela em que o SMTP pode aceitar a mensagem e o
+commit posterior falhar; eliminar essa janela exige um outbox transacional, que
+fica fora do MVP. Falhas sao registradas apenas com mensagem generica, sem
+destinatario, URL, token ou credenciais.
 
 ## Testes
 
