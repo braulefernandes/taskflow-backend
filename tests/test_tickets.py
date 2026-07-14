@@ -23,6 +23,7 @@ from app.models import (
     TicketStatus,
     User,
 )
+from app.schemas import tickets as ticket_schemas
 
 
 @pytest.fixture
@@ -882,3 +883,210 @@ def test_cancelled_ticket_has_no_status_transition(
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "invalid_status_transition"
+
+
+def cancel_path(ticket: Ticket) -> str:
+    return f"/api/v1/tickets/{ticket.id}/cancel"
+
+
+@pytest.mark.parametrize("role", [OrganizationRole.ADMIN, OrganizationRole.MANAGER])
+def test_admin_and_manager_cancel_without_physical_deletion(
+    role: OrganizationRole, client: TestClient, db_session: Session
+) -> None:
+    actor, organization, membership = create_account(db_session, role)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, actor)
+
+    response = client.post(cancel_path(ticket), headers=headers(actor, membership))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "CANCELLED"
+    cancelled_at = datetime.fromisoformat(response.json()["cancelled_at"])
+    assert cancelled_at.tzinfo is not None
+    assert cancelled_at.utcoffset() == timedelta(0)
+    persisted = db_session.get(Ticket, ticket.id)
+    assert persisted is not None
+    assert persisted.status == TicketStatus.CANCELLED
+
+
+def test_requester_cancels_own_pending_ticket(
+    client: TestClient, db_session: Session
+) -> None:
+    requester, organization, membership = create_account(
+        db_session, OrganizationRole.REQUESTER
+    )
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, requester)
+    response = client.post(cancel_path(ticket), headers=headers(requester, membership))
+    assert response.status_code == 200
+    assert response.json()["status"] == "CANCELLED"
+
+
+def test_requester_cannot_cancel_in_progress_ticket(
+    client: TestClient, db_session: Session
+) -> None:
+    requester, organization, membership = create_account(
+        db_session, OrganizationRole.REQUESTER
+    )
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(
+        db_session, organization, category, requester, assignee=agent
+    )
+    ticket.status = TicketStatus.IN_PROGRESS
+    db_session.commit()
+    response = client.post(cancel_path(ticket), headers=headers(requester, membership))
+    assert response.status_code == 403
+
+
+def test_agent_cannot_cancel(client: TestClient, db_session: Session) -> None:
+    agent, organization, membership = create_account(db_session, OrganizationRole.AGENT)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, agent, assignee=agent)
+    response = client.post(cancel_path(ticket), headers=headers(agent, membership))
+    assert response.status_code == 403
+
+
+def test_external_ticket_is_hidden_on_cancellation(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, _, membership = create_account(db_session, OrganizationRole.ADMIN)
+    other, other_org, _ = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, other_org)
+    ticket = create_ticket(db_session, other_org, category, other)
+    response = client.post(cancel_path(ticket), headers=headers(admin, membership))
+    assert response.status_code == 404
+
+
+def test_completed_ticket_cannot_be_cancelled(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    ticket.status = TicketStatus.COMPLETED
+    ticket.completed_at = datetime.now(UTC)
+    db_session.commit()
+    response = client.post(cancel_path(ticket), headers=headers(admin, membership))
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "completed_ticket_cancellation"
+
+
+def test_repeated_cancellation_is_idempotent(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    first = client.post(cancel_path(ticket), headers=headers(admin, membership))
+    second = client.post(cancel_path(ticket), headers=headers(admin, membership))
+    assert second.status_code == 200
+    assert second.json()["cancelled_at"] == first.json()["cancelled_at"]
+
+
+def test_cancelled_ticket_cannot_be_edited(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    client.post(cancel_path(ticket), headers=headers(admin, membership))
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={"title": "Negado"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "cancelled_ticket_edit"
+
+
+@pytest.mark.parametrize(
+    ("status", "due_offset", "expected_overdue"),
+    [
+        (TicketStatus.PENDING, timedelta(hours=-2), True),
+        (TicketStatus.COMPLETED, timedelta(hours=-2), False),
+        (TicketStatus.CANCELLED, timedelta(hours=-2), False),
+        (TicketStatus.PENDING, timedelta(hours=2), False),
+    ],
+)
+def test_overdue_is_derived_from_due_date_and_status(
+    status: TicketStatus,
+    due_offset: timedelta,
+    expected_overdue: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    fixed_now = datetime(2026, 7, 14, 15, 0, tzinfo=UTC)
+    monkeypatch.setattr(ticket_schemas, "utc_now", lambda: fixed_now)
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    ticket.status = status
+    ticket.due_date = fixed_now + due_offset
+    if status == TicketStatus.COMPLETED:
+        ticket.completed_at = fixed_now - timedelta(minutes=30)
+    if status == TicketStatus.CANCELLED:
+        ticket.cancelled_at = fixed_now - timedelta(minutes=30)
+    db_session.commit()
+
+    response = client.get(
+        f"/api/v1/tickets/{ticket.id}", headers=headers(admin, membership)
+    )
+    assert response.json()["is_overdue"] is expected_overdue
+    assert response.json()["overdue_seconds"] == (7200 if expected_overdue else 0)
+
+
+def test_ticket_without_due_date_is_not_overdue(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    response = client.get(
+        f"/api/v1/tickets/{ticket.id}", headers=headers(admin, membership)
+    )
+    assert response.json()["is_overdue"] is False
+    assert response.json()["overdue_seconds"] == 0
+
+
+def test_listing_includes_controlled_overdue_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    fixed_now = datetime(2026, 7, 14, 15, 0, tzinfo=UTC)
+    monkeypatch.setattr(ticket_schemas, "utc_now", lambda: fixed_now)
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    ticket.due_date = fixed_now - timedelta(minutes=90)
+    db_session.commit()
+    response = client.get("/api/v1/tickets", headers=headers(admin, membership))
+    item = response.json()["items"][0]
+    assert item["is_overdue"] is True
+    assert item["overdue_seconds"] == 5400
+
+
+def test_overdue_calculation_accepts_naive_database_datetime(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    fixed_now = datetime(2026, 7, 14, 15, 0, tzinfo=UTC)
+    monkeypatch.setattr(ticket_schemas, "utc_now", lambda: fixed_now)
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    ticket.due_date = datetime(2026, 7, 14, 14, 0)
+    db_session.commit()
+    response = client.get(
+        f"/api/v1/tickets/{ticket.id}", headers=headers(admin, membership)
+    )
+    assert response.status_code == 200
+    assert response.json()["overdue_seconds"] == 3600
+
+
+def test_overdue_fields_are_not_persisted() -> None:
+    assert "is_overdue" not in Ticket.__table__.c
+    assert "overdue_seconds" not in Ticket.__table__.c

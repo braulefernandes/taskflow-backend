@@ -492,6 +492,7 @@ GET   /api/v1/tickets/{id}
 PATCH /api/v1/tickets/{id}
 PATCH /api/v1/tickets/{id}/assignee
 PATCH /api/v1/tickets/{id}/status
+POST  /api/v1/tickets/{id}/cancel
 ```
 
 Na criacao, o cliente envia somente `title`, `description`, `category_id`,
@@ -594,10 +595,40 @@ prioridade fora de `LOW`, `MEDIUM`, `HIGH` e `URGENT` sao rejeitados.
 
 Erros principais: `invalid_status_transition`, `assignee_required_for_status`,
 `terminal_ticket_planning_update`, `due_date_in_past` e `insufficient_role`.
-Nenhuma operacao desta entrega cancela tickets ou calcula atraso.
+Nenhuma operacao desta entrega calcula ou persiste um novo status de atraso.
 
-Esta entrega nao implementa cancelamento, comentarios, historico, atraso ou
-filtros avancados.
+### Cancelamento e atraso
+
+O cancelamento usa `POST /api/v1/tickets/{id}/cancel`, sem corpo e sem motivo,
+pois ainda nao existe campo de motivo modelado. Ele e logico: o registro e
+preservado, o status muda para `CANCELLED`, `cancelled_at` recebe o instante UTC
+e `completed_at` permanece nulo. Repetir o cancelamento retorna o mesmo ticket
+sem substituir `cancelled_at`.
+
+`ADMIN` e `MANAGER` cancelam qualquer ticket da organizacao. `REQUESTER` pode
+cancelar somente um ticket proprio enquanto `PENDING`. `AGENT` nao cancela.
+Tickets concluidos retornam `409 completed_ticket_cancellation`. Tickets
+cancelados nao podem ser editados, receber responsavel ou mudar pelo endpoint
+comum de status. Nao existe endpoint de exclusao fisica.
+
+Toda resposta publica de ticket, inclusive listagem, possui:
+
+```json
+{
+  "is_overdue": true,
+  "overdue_seconds": 5400
+}
+```
+
+O atraso e calculado no momento da resposta, em segundos inteiros e UTC. Um
+ticket e atrasado quando possui `due_date` anterior ao instante atual e nao esta
+`COMPLETED` nem `CANCELLED`. Nos demais casos, `is_overdue` e falso e
+`overdue_seconds` e zero. Esses campos nao existem na tabela e nao sao
+persistidos. Datetimes sem timezone vindos de bancos de teste sao tratados como
+UTC defensivamente.
+
+Esta entrega nao implementa motivo de cancelamento, exclusao fisica, filtros de
+atraso, comentarios, historico, dashboard ou filtros avancados.
 
 ## Recuperacao de senha
 

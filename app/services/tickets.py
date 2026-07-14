@@ -83,6 +83,15 @@ class TicketService:
         payload: TicketUpdateRequest,
     ) -> Ticket:
         ticket = self.get_ticket(context=context, ticket_id=ticket_id)
+        if ticket.status == TicketStatus.CANCELLED and not payload.model_fields_set & {
+            "priority",
+            "due_date",
+        }:
+            raise AppException(
+                "Solicitacao cancelada nao pode ser editada.",
+                status_code=HTTPStatus.CONFLICT,
+                code="cancelled_ticket_edit",
+            )
         self._ensure_can_edit(context=context, ticket=ticket)
         if payload.model_fields_set & {"priority", "due_date"}:
             self._ensure_can_change_planning(context=context, ticket=ticket)
@@ -93,6 +102,28 @@ class TicketService:
             self._validate_due_date(payload.due_date)
         for field in payload.model_fields_set:
             setattr(ticket, field, getattr(payload, field))
+        try:
+            self.db.commit()
+            return self.get_ticket(context=context, ticket_id=ticket.id)
+        except (IntegrityError, SQLAlchemyError) as exc:
+            self.db.rollback()
+            raise persistence_error() from exc
+
+    def cancel_ticket(self, *, context: AuthContext, ticket_id: uuid.UUID) -> Ticket:
+        ticket = self.get_ticket(context=context, ticket_id=ticket_id)
+        self._ensure_can_cancel(context=context, ticket=ticket)
+        if ticket.status == TicketStatus.CANCELLED:
+            return ticket
+        if ticket.status == TicketStatus.COMPLETED:
+            raise AppException(
+                "Solicitacao concluida nao pode ser cancelada.",
+                status_code=HTTPStatus.CONFLICT,
+                code="completed_ticket_cancellation",
+            )
+
+        ticket.status = TicketStatus.CANCELLED
+        ticket.cancelled_at = datetime.now(UTC)
+        ticket.completed_at = None
         try:
             self.db.commit()
             return self.get_ticket(context=context, ticket_id=ticket.id)
@@ -297,6 +328,25 @@ class TicketService:
                 status_code=HTTPStatus.CONFLICT,
                 code="completed_ticket_assignment",
             )
+
+    @staticmethod
+    def _ensure_can_cancel(*, context: AuthContext, ticket: Ticket) -> None:
+        if context.membership.role in {
+            OrganizationRole.ADMIN,
+            OrganizationRole.MANAGER,
+        }:
+            return
+        if (
+            context.membership.role == OrganizationRole.REQUESTER
+            and ticket.requester_id == context.user.id
+            and ticket.status in {TicketStatus.PENDING, TicketStatus.CANCELLED}
+        ):
+            return
+        raise AppException(
+            "Papel insuficiente.",
+            status_code=HTTPStatus.FORBIDDEN,
+            code="insufficient_role",
+        )
 
 
 def not_found_error() -> AppException:
