@@ -116,11 +116,16 @@ users
 
 organizations
   1:N organization_members
+  1:N categories
 
 organization_members
   N:1 users
   N:1 organizations
   role: ADMIN | MANAGER | AGENT | REQUESTER
+
+categories
+  N:1 organizations
+  unique: organization_id + normalized_name
 ```
 
 ## Cadastro inicial
@@ -398,6 +403,74 @@ E-mail, status, senha ou hash, papel, organizacao, membership, IDs e timestamps
 sao rejeitados com `422 validation_error`. A resposta possui somente `id`,
 `name`, `email`, `avatar_url` e `is_active`; senha e hash nunca sao retornados.
 O endpoint `GET /api/v1/auth/me` reflete os dados atualizados.
+
+## Categorias
+
+Categorias pertencem sempre a organizacao do contexto autenticado. Nao existe
+endpoint de exclusao fisica: a desativacao preserva o registro e seu historico.
+
+Endpoints:
+
+```text
+GET   /api/v1/categories
+POST  /api/v1/categories
+GET   /api/v1/categories/{id}
+PATCH /api/v1/categories/{id}
+PATCH /api/v1/categories/{id}/status
+```
+
+`ADMIN` cria, edita, ativa e desativa. Qualquer usuario autenticado pode listar
+as categorias ativas para formularios. A listagem administrativa usa
+`include_inactive=true` e e exclusiva de `ADMIN`.
+
+Exemplo de criacao:
+
+```json
+{
+  "name": "Suporte Tecnico",
+  "description": "Demandas de suporte e infraestrutura"
+}
+```
+
+O nome e obrigatorio, possui ate 255 caracteres e tem espacos externos e
+repetidos normalizados. A unicidade ignora maiusculas e minusculas dentro da
+mesma organizacao: `Financeiro` e `FINANCEIRO` sao o mesmo nome. A grafia de
+exibicao e preservada em `name`; a chave interna `normalized_name` usa
+`casefold()` e nao e exposta pela API. Acentos continuam significativos.
+
+Constraint principal:
+
+```text
+UNIQUE (organization_id, normalized_name)
+```
+
+O mesmo nome pode existir em organizacoes diferentes. Consultas por ID e
+listagens sempre filtram pela organizacao autenticada. Um ID externo retorna
+`404 resource_not_found`.
+
+Exemplo de edicao parcial:
+
+```json
+{
+  "name": "Infraestrutura",
+  "description": null
+}
+```
+
+Exemplo de desativacao:
+
+```json
+{
+  "is_active": false
+}
+```
+
+Erros principais:
+
+- `403 insufficient_role`: operacao administrativa sem papel `ADMIN`;
+- `404 resource_not_found`: categoria inexistente ou de outra organizacao;
+- `409 category_already_exists`: nome normalizado duplicado na organizacao;
+- `422 validation_error`: payload ou nome invalido.
 
 ## Testes
 
