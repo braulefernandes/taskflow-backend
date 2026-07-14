@@ -372,6 +372,33 @@ Erros de negocio:
 - `409 last_active_admin`: a operacao deixaria a organizacao sem administrador
   ativo.
 
+## Perfil do usuario autenticado
+
+Endpoint:
+
+```text
+PATCH /api/v1/users/me
+```
+
+A rota exige JWT valido e atualiza somente o usuario do contexto autenticado.
+O payload e parcial e aceita apenas `name` e `avatar_url`:
+
+```json
+{
+  "name": "Ana Silva",
+  "avatar_url": "https://example.com/avatar.png"
+}
+```
+
+O nome tem entre 1 e 255 caracteres e espacos repetidos sao normalizados. A URL
+do avatar deve usar HTTP ou HTTPS, ter no maximo 2048 caracteres e pode receber
+`null` para remover o avatar atual.
+
+E-mail, status, senha ou hash, papel, organizacao, membership, IDs e timestamps
+sao rejeitados com `422 validation_error`. A resposta possui somente `id`,
+`name`, `email`, `avatar_url` e `is_active`; senha e hash nunca sao retornados.
+O endpoint `GET /api/v1/auth/me` reflete os dados atualizados.
+
 ## Testes
 
 ```powershell
