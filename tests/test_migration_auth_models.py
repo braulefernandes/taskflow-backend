@@ -6,7 +6,9 @@ def test_initial_auth_migration_is_registered() -> None:
     config = Config("alembic.ini")
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["20260714_1200"]
+    revision = script.get_revision("20260713_0946")
+    assert revision is not None
+    assert revision.down_revision is None
 
 
 def test_initial_auth_migration_contains_expected_operations() -> None:

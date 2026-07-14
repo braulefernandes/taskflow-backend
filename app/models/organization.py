@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.category import Category
     from app.models.organization_member import OrganizationMember
+    from app.models.ticket import Ticket
 
 
 class Organization(Base):
@@ -19,7 +20,9 @@ class Organization(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    slug: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
+    slug: Mapped[str] = mapped_column(
+        String(120), nullable=False, unique=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -39,4 +42,7 @@ class Organization(Base):
     categories: Mapped[list[Category]] = relationship(
         back_populates="organization",
         passive_deletes=True,
+    )
+    tickets: Mapped[list[Ticket]] = relationship(
+        back_populates="organization", passive_deletes=True
     )

@@ -12,6 +12,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.organization_member import OrganizationMember
     from app.models.password_reset_token import PasswordResetToken
+    from app.models.ticket import Ticket
 
 
 class User(Base):
@@ -19,10 +20,14 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    email: Mapped[str] = mapped_column(
+        String(320), nullable=False, unique=True, index=True
+    )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -43,6 +48,18 @@ class User(Base):
         back_populates="user",
         passive_deletes=True,
     )
+    requested_tickets: Mapped[list[Ticket]] = relationship(
+        back_populates="requester",
+        foreign_keys="Ticket.requester_id",
+        passive_deletes=True,
+    )
+    assigned_tickets: Mapped[list[Ticket]] = relationship(
+        back_populates="assignee",
+        foreign_keys="Ticket.assignee_id",
+        passive_deletes=True,
+    )
 
     def __repr__(self) -> str:
-        return f"User(id={self.id!r}, email={self.email!r}, is_active={self.is_active!r})"
+        return (
+            f"User(id={self.id!r}, email={self.email!r}, is_active={self.is_active!r})"
+        )
