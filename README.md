@@ -285,7 +285,9 @@ Exemplo de resposta `200 OK`:
 
 Erros esperados:
 
-- `401 not_authenticated`: token ausente, malformado, invalido, expirado, usuario inexistente/inativo ou membership inexistente/inativo.
+- `401 not_authenticated`: token ausente, malformado, invalido, expirado,
+  usuario inexistente/inativo ou membership inexistente.
+- `403 membership_inactive`: membership existente, mas inativa na organizacao atual.
 
 O endpoint nao retorna senha, hash de senha, token, segredo ou timestamps desnecessarios.
 
@@ -321,6 +323,54 @@ Comportamento:
 - o token continua tecnicamente valido ate sua expiracao natural;
 - riscos e limitacoes: se um token for copiado antes do logout, ele pode ser usado ate expirar;
 - evolucao futura: refresh token com rotacao e revogacao persistente.
+
+## Gerenciamento de membros
+
+Todos os endpoints exigem JWT valido e papel `ADMIN`. A organizacao e obtida do
+contexto autenticado; a API nao aceita `organization_id` no payload.
+
+Endpoints:
+
+```text
+GET   /api/v1/members
+POST  /api/v1/members
+GET   /api/v1/members/{id}
+PATCH /api/v1/members/{id}
+PATCH /api/v1/members/{id}/status
+```
+
+A listagem aceita `search`, `role`, `is_active`, `page` e `page_size`. O retorno
+contem `items`, `total`, `page` e `page_size`. Cada item apresenta somente o ID
+da membership, ID do usuario, nome, e-mail, papel, status e datas da membership.
+
+Para criar um membro, envie nome, e-mail, papel e `temporary_password`. O e-mail
+e normalizado. Se o usuario ja existir, ele e associado sem alterar seus dados
+ou senha; se nao existir, um usuario ativo e criado com hash seguro. Senhas e
+hashes nunca sao retornados.
+
+Exemplo de criacao:
+
+```json
+{
+  "name": "Maria Souza",
+  "email": "maria@example.com",
+  "role": "AGENT",
+  "temporary_password": "Temporaria123"
+}
+```
+
+Alteracao de papel usa `{ "role": "MANAGER" }`. Alteracao de status usa
+`{ "is_active": false }`. A API rejeita membership duplicada e impede desativar
+ou remover o papel do ultimo administrador ativo. IDs de outra organizacao
+retornam `404 resource_not_found`, sem revelar a existencia do recurso.
+
+Erros de negocio:
+
+- `403 insufficient_role`: o usuario nao e administrador;
+- `404 resource_not_found`: membro inexistente ou de outra organizacao;
+- `409 membership_already_exists`: usuario ja associado;
+- `409 last_active_admin`: a operacao deixaria a organizacao sem administrador
+  ativo.
 
 ## Testes
 
