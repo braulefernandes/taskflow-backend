@@ -27,3 +27,16 @@ __all__ = [
     "TokenResponse",
     "UserPublic",
 ]
+from app.schemas.tickets import (
+    TicketCreateRequest,
+    TicketListResponse,
+    TicketResponse,
+    TicketUpdateRequest,
+)
+
+__all__ = [
+    "TicketCreateRequest",
+    "TicketListResponse",
+    "TicketResponse",
+    "TicketUpdateRequest",
+]
