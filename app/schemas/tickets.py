@@ -65,6 +65,12 @@ class TicketAssigneeUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class TicketStatusUpdateRequest(BaseModel):
+    status: TicketStatus
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class OrganizationSummary(BaseModel):
     id: uuid.UUID
     name: str
