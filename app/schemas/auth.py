@@ -10,6 +10,14 @@ PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
 
 
+def validate_password_strength(value: str) -> str:
+    has_letter = bool(re.search(r"[A-Za-z]", value))
+    has_number = bool(re.search(r"\d", value))
+    if not has_letter or not has_number:
+        raise ValueError("Senha invalida.")
+    return value
+
+
 class RegisterRequest(BaseModel):
     user_name: str = Field(min_length=1, max_length=255, examples=["Ana Silva"])
     email: EmailStr = Field(max_length=320, examples=["ana@example.com"])
@@ -37,11 +45,7 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
-        has_letter = bool(re.search(r"[A-Za-z]", value))
-        has_number = bool(re.search(r"\d", value))
-        if not has_letter or not has_number:
-            raise ValueError("Senha invalida.")
-        return value
+        return validate_password_strength(value)
 
 
 class UserPublic(BaseModel):

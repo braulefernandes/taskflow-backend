@@ -209,6 +209,29 @@ def test_auth_me_rejects_missing_user(client: TestClient) -> None:
     assert_not_authenticated(response)
 
 
+def test_auth_me_rejects_user_without_membership(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user = User(
+        name="Sem Membership",
+        email="sem-membership@example.com",
+        password_hash=get_password_hash("Senha123"),
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    token = create_access_token(
+        subject=str(user.id),
+        organization_id=str(uuid.uuid4()),
+        role="ADMIN",
+    )
+
+    response = get_me(client, token)
+
+    assert_not_authenticated(response)
+
+
 def test_auth_me_rejects_user_deactivated_after_token_issue(
     client: TestClient,
     db_session: Session,
@@ -234,7 +257,13 @@ def test_auth_me_rejects_inactive_membership(
 
     response = get_me(client, token)
 
-    assert_not_authenticated(response)
+    assert response.status_code == 403
+    assert response.json() == {
+        "error": {
+            "code": "membership_inactive",
+            "message": "Membership inativo.",
+        }
+    }
 
 
 def test_auth_me_does_not_infer_access_to_another_organization(

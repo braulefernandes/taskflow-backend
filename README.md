@@ -45,7 +45,16 @@ Configuracoes principais:
 - `JWT_SECRET_KEY`
 - `JWT_ALGORITHM`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
+- `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`
 - `FRONTEND_URL`
+- `EMAIL_BACKEND`
+- `EMAIL_FROM_ADDRESS`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_USE_TLS`
+- `SMTP_TIMEOUT_SECONDS`
 - `BACKEND_CORS_ORIGINS`
 - `API_V1_PREFIX`
 
@@ -116,11 +125,16 @@ users
 
 organizations
   1:N organization_members
+  1:N categories
 
 organization_members
   N:1 users
   N:1 organizations
   role: ADMIN | MANAGER | AGENT | REQUESTER
+
+categories
+  N:1 organizations
+  unique: organization_id + normalized_name
 ```
 
 ## Cadastro inicial
@@ -285,7 +299,9 @@ Exemplo de resposta `200 OK`:
 
 Erros esperados:
 
-- `401 not_authenticated`: token ausente, malformado, invalido, expirado, usuario inexistente/inativo ou membership inexistente/inativo.
+- `401 not_authenticated`: token ausente, malformado, invalido, expirado,
+  usuario inexistente/inativo ou membership inexistente.
+- `403 membership_inactive`: membership existente, mas inativa na organizacao atual.
 
 O endpoint nao retorna senha, hash de senha, token, segredo ou timestamps desnecessarios.
 
@@ -321,6 +337,212 @@ Comportamento:
 - o token continua tecnicamente valido ate sua expiracao natural;
 - riscos e limitacoes: se um token for copiado antes do logout, ele pode ser usado ate expirar;
 - evolucao futura: refresh token com rotacao e revogacao persistente.
+
+## Gerenciamento de membros
+
+Todos os endpoints exigem JWT valido e papel `ADMIN`. A organizacao e obtida do
+contexto autenticado; a API nao aceita `organization_id` no payload.
+
+Endpoints:
+
+```text
+GET   /api/v1/members
+POST  /api/v1/members
+GET   /api/v1/members/{id}
+PATCH /api/v1/members/{id}
+PATCH /api/v1/members/{id}/status
+```
+
+A listagem aceita `search`, `role`, `is_active`, `page` e `page_size`. O retorno
+contem `items`, `total`, `page` e `page_size`. Cada item apresenta somente o ID
+da membership, ID do usuario, nome, e-mail, papel, status e datas da membership.
+
+Para criar um membro, envie nome, e-mail, papel e `temporary_password`. O e-mail
+e normalizado. Se o usuario ja existir, ele e associado sem alterar seus dados
+ou senha; se nao existir, um usuario ativo e criado com hash seguro. Senhas e
+hashes nunca sao retornados.
+
+Exemplo de criacao:
+
+```json
+{
+  "name": "Maria Souza",
+  "email": "maria@example.com",
+  "role": "AGENT",
+  "temporary_password": "Temporaria123"
+}
+```
+
+Alteracao de papel usa `{ "role": "MANAGER" }`. Alteracao de status usa
+`{ "is_active": false }`. A API rejeita membership duplicada e impede desativar
+ou remover o papel do ultimo administrador ativo. IDs de outra organizacao
+retornam `404 resource_not_found`, sem revelar a existencia do recurso.
+
+Erros de negocio:
+
+- `403 insufficient_role`: o usuario nao e administrador;
+- `404 resource_not_found`: membro inexistente ou de outra organizacao;
+- `409 membership_already_exists`: usuario ja associado;
+- `409 last_active_admin`: a operacao deixaria a organizacao sem administrador
+  ativo.
+
+## Perfil do usuario autenticado
+
+Endpoint:
+
+```text
+PATCH /api/v1/users/me
+```
+
+A rota exige JWT valido e atualiza somente o usuario do contexto autenticado.
+O payload e parcial e aceita apenas `name` e `avatar_url`:
+
+```json
+{
+  "name": "Ana Silva",
+  "avatar_url": "https://example.com/avatar.png"
+}
+```
+
+O nome tem entre 1 e 255 caracteres e espacos repetidos sao normalizados. A URL
+do avatar deve usar HTTP ou HTTPS, ter no maximo 2048 caracteres e pode receber
+`null` para remover o avatar atual.
+
+E-mail, status, senha ou hash, papel, organizacao, membership, IDs e timestamps
+sao rejeitados com `422 validation_error`. A resposta possui somente `id`,
+`name`, `email`, `avatar_url` e `is_active`; senha e hash nunca sao retornados.
+O endpoint `GET /api/v1/auth/me` reflete os dados atualizados.
+
+## Categorias
+
+Categorias pertencem sempre a organizacao do contexto autenticado. Nao existe
+endpoint de exclusao fisica: a desativacao preserva o registro e seu historico.
+
+Endpoints:
+
+```text
+GET   /api/v1/categories
+POST  /api/v1/categories
+GET   /api/v1/categories/{id}
+PATCH /api/v1/categories/{id}
+PATCH /api/v1/categories/{id}/status
+```
+
+`ADMIN` cria, edita, ativa e desativa. Qualquer usuario autenticado pode listar
+as categorias ativas para formularios. A listagem administrativa usa
+`include_inactive=true` e e exclusiva de `ADMIN`.
+
+Exemplo de criacao:
+
+```json
+{
+  "name": "Suporte Tecnico",
+  "description": "Demandas de suporte e infraestrutura"
+}
+```
+
+O nome e obrigatorio, possui ate 255 caracteres e tem espacos externos e
+repetidos normalizados. A unicidade ignora maiusculas e minusculas dentro da
+mesma organizacao: `Financeiro` e `FINANCEIRO` sao o mesmo nome. A grafia de
+exibicao e preservada em `name`; a chave interna `normalized_name` usa
+`casefold()` e nao e exposta pela API. Acentos continuam significativos.
+
+Constraint principal:
+
+```text
+UNIQUE (organization_id, normalized_name)
+```
+
+O mesmo nome pode existir em organizacoes diferentes. Consultas por ID e
+listagens sempre filtram pela organizacao autenticada. Um ID externo retorna
+`404 resource_not_found`.
+
+Exemplo de edicao parcial:
+
+```json
+{
+  "name": "Infraestrutura",
+  "description": null
+}
+```
+
+Exemplo de desativacao:
+
+```json
+{
+  "is_active": false
+}
+```
+
+Erros principais:
+
+- `403 insufficient_role`: operacao administrativa sem papel `ADMIN`;
+- `404 resource_not_found`: categoria inexistente ou de outra organizacao;
+- `409 category_already_exists`: nome normalizado duplicado na organizacao;
+- `422 validation_error`: payload ou nome invalido.
+
+## Recuperacao de senha
+
+Endpoints:
+
+```text
+POST /api/v1/auth/forgot-password
+POST /api/v1/auth/reset-password
+```
+
+Solicitacao:
+
+```json
+{
+  "email": "ana@example.com"
+}
+```
+
+E-mails sao normalizados. A resposta e sempre `200` com a mesma mensagem,
+independentemente de o e-mail existir, estar inativo ou nao estar cadastrado:
+
+```json
+{
+  "message": "Se o e-mail estiver cadastrado, enviaremos instrucoes para redefinir a senha."
+}
+```
+
+Para usuarios ativos, a API gera 32 bytes aleatorios com
+`secrets.token_urlsafe`, armazena somente o SHA-256 hexadecimal e monta a URL
+`FRONTEND_URL/redefinir-senha?token=...`. A validade e configurada por
+`PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`. Uma nova solicitacao invalida tokens
+anteriores ainda nao usados.
+
+Redefinicao:
+
+```json
+{
+  "token": "token-recebido-por-email",
+  "new_password": "NovaSenha123"
+}
+```
+
+O backend calcula o hash do token recebido, bloqueia o registro durante a
+transacao e valida expiracao, `used_at` e usuario ativo. Senha e `used_at` sao
+atualizados na mesma transacao. O token nao autentica o usuario e nao pode ser
+reutilizado. Token invalido, expirado, usado ou associado a usuario inativo
+retorna o mesmo erro `400 invalid_reset_token`.
+
+### Envio de e-mail
+
+`EMAIL_BACKEND=development` usa um adapter seguro que nao envia mensagens e nao
+registra destinatario, URL ou token. `EMAIL_BACKEND=smtp` habilita o adapter
+SMTP real. Host, porta, usuario, senha, remetente, TLS e timeout sao definidos
+somente por variaveis de ambiente; nao existem credenciais hardcoded.
+
+Para testes, `EmailSender` pode ser substituido por um fake por dependency
+override. O fake captura a mensagem em memoria sem acessar rede.
+
+O envio ocorre antes do commit do token para permitir rollback quando o adapter
+falha. Existe uma pequena janela em que o SMTP pode aceitar a mensagem e o
+commit posterior falhar; eliminar essa janela exige um outbox transacional, que
+fica fora do MVP. Falhas sao registradas apenas com mensagem generica, sem
+destinatario, URL, token ou credenciais.
 
 ## Testes
 

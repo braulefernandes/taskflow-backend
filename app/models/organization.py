@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.category import Category
     from app.models.organization_member import OrganizationMember
 
 
@@ -32,6 +33,10 @@ class Organization(Base):
     )
 
     memberships: Mapped[list[OrganizationMember]] = relationship(
+        back_populates="organization",
+        passive_deletes=True,
+    )
+    categories: Mapped[list[Category]] = relationship(
         back_populates="organization",
         passive_deletes=True,
     )

@@ -34,6 +34,22 @@ class AuthRepository:
 
         return self.db.scalar(statement)
 
+    def get_membership_for_user(
+        self,
+        user: User,
+        organization_id: uuid.UUID | None = None,
+    ) -> OrganizationMember | None:
+        statement = (
+            select(OrganizationMember)
+            .options(joinedload(OrganizationMember.organization))
+            .where(OrganizationMember.user_id == user.id)
+            .order_by(OrganizationMember.created_at.asc())
+        )
+        if organization_id is not None:
+            statement = statement.where(OrganizationMember.organization_id == organization_id)
+
+        return self.db.scalar(statement)
+
     def organization_slug_exists(self, slug: str) -> bool:
         return self.db.scalar(select(Organization.id).where(Organization.slug == slug)) is not None
 
