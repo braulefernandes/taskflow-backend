@@ -37,3 +37,6 @@ Thumbs.db
 
 # Alembic temporario
 alembic/versions/__pycache__/
+
+# Documentation
+/docs/

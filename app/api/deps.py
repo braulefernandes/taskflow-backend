@@ -1,14 +1,16 @@
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 
 from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
+from app.core.authorization import ensure_active_membership, ensure_role
 from app.core.exceptions import AppException
 from app.core.jwt import InvalidTokenError, TokenExpiredError, decode_access_token
 from app.db.session import get_db
-from app.models import Organization, OrganizationMember, User
+from app.models import Organization, OrganizationMember, OrganizationRole, User
 from app.repositories.auth import AuthRepository
 
 
@@ -46,15 +48,42 @@ def get_current_auth_context(
     if user is None or not user.is_active:
         raise_authentication_error()
 
-    membership = repository.get_active_membership_for_user(user, organization_id)
+    membership = repository.get_membership_for_user(user, organization_id)
     if membership is None or membership.organization is None:
         raise_authentication_error()
+
+    ensure_active_membership(membership)
 
     return AuthContext(
         user=user,
         organization=membership.organization,
         membership=membership,
     )
+
+
+def require_authenticated_user(
+    context: AuthContext = Depends(get_current_auth_context),
+) -> AuthContext:
+    return context
+
+
+def require_roles(
+    *allowed_roles: OrganizationRole,
+) -> Callable[[AuthContext], AuthContext]:
+    def role_dependency(
+        context: AuthContext = Depends(require_authenticated_user),
+    ) -> AuthContext:
+        ensure_role(context.membership, allowed_roles)
+        return context
+
+    return role_dependency
+
+
+require_admin = require_roles(OrganizationRole.ADMIN)
+require_admin_or_manager = require_roles(
+    OrganizationRole.ADMIN,
+    OrganizationRole.MANAGER,
+)
 
 
 def extract_bearer_token(authorization: str | None) -> str:
