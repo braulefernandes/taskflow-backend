@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Organization, OrganizationRole, Ticket, User
+from app.models import Organization, OrganizationMember, OrganizationRole, Ticket, User
 
 
 class TicketRepository:
@@ -86,6 +86,18 @@ class TicketRepository:
         self.db.add(ticket)
         self.db.flush()
         return ticket
+
+    def get_assignment_membership(
+        self, *, organization_id: uuid.UUID, user_id: uuid.UUID
+    ) -> OrganizationMember | None:
+        return self.db.scalar(
+            select(OrganizationMember)
+            .options(joinedload(OrganizationMember.user))
+            .where(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.user_id == user_id,
+            )
+        )
 
     @staticmethod
     def _response_loads() -> tuple[object, ...]:

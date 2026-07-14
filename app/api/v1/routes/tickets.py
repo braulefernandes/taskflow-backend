@@ -4,10 +4,15 @@ from http import HTTPStatus
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.deps import AuthContext, require_authenticated_user
+from app.api.deps import (
+    AuthContext,
+    require_admin_or_manager,
+    require_authenticated_user,
+)
 from app.db.session import get_db
 from app.schemas.tickets import (
     TicketCreateRequest,
+    TicketAssigneeUpdateRequest,
     TicketListResponse,
     TicketResponse,
     TicketUpdateRequest,
@@ -56,5 +61,17 @@ def update_ticket(
     db: Session = Depends(get_db),
 ) -> TicketResponse:
     return TicketService(db).update_ticket(
+        context=context, ticket_id=ticket_id, payload=payload
+    )
+
+
+@router.patch("/{ticket_id}/assignee", response_model=TicketResponse)
+def update_ticket_assignee(
+    ticket_id: uuid.UUID,
+    payload: TicketAssigneeUpdateRequest,
+    context: AuthContext = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    return TicketService(db).update_assignee(
         context=context, ticket_id=ticket_id, payload=payload
     )

@@ -59,6 +59,12 @@ class TicketUpdateRequest(BaseModel):
         return self
 
 
+class TicketAssigneeUpdateRequest(BaseModel):
+    assignee_id: uuid.UUID | None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class OrganizationSummary(BaseModel):
     id: uuid.UUID
     name: str

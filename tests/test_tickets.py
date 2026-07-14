@@ -20,6 +20,7 @@ from app.models import (
     OrganizationRole,
     Ticket,
     TicketPriority,
+    TicketStatus,
     User,
 )
 
@@ -409,3 +410,192 @@ def test_ticket_from_another_organization_is_hidden_for_get_and_patch(
     )
     assert get_response.status_code == 404
     assert patch_response.status_code == 404
+
+
+@pytest.mark.parametrize("role", [OrganizationRole.ADMIN, OrganizationRole.MANAGER])
+def test_admin_and_manager_assign_eligible_member(
+    role: OrganizationRole, client: TestClient, db_session: Session
+) -> None:
+    actor, organization, membership = create_account(db_session, role)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, actor)
+
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}/assignee",
+        headers=headers(actor, membership),
+        json={"assignee_id": str(agent.id)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["assignee"] == {
+        "id": str(agent.id),
+        "name": agent.name,
+        "email": agent.email,
+        "avatar_url": None,
+    }
+    assert response.json()["status"] == "PENDING"
+    assert "password" not in response.text.lower()
+    assert "hash" not in response.text.lower()
+
+
+@pytest.mark.parametrize("role", [OrganizationRole.AGENT, OrganizationRole.REQUESTER])
+def test_agent_and_requester_cannot_assign(
+    role: OrganizationRole, client: TestClient, db_session: Session
+) -> None:
+    actor, organization, membership = create_account(db_session, role)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, actor)
+
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}/assignee",
+        headers=headers(actor, membership),
+        json={"assignee_id": str(agent.id)},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "insufficient_role"
+
+
+def test_external_and_nonexistent_assignees_are_hidden(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    external, _external_org, _ = create_account(db_session, OrganizationRole.AGENT)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+
+    for assignee_id in (external.id, uuid.uuid4()):
+        response = client.patch(
+            f"/api/v1/tickets/{ticket.id}/assignee",
+            headers=headers(admin, membership),
+            json={"assignee_id": str(assignee_id)},
+        )
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "resource_not_found"
+
+
+@pytest.mark.parametrize(
+    ("inactive_target", "expected_code"),
+    [
+        ("membership", "assignee_membership_inactive"),
+        ("user", "assignee_user_inactive"),
+    ],
+)
+def test_inactive_membership_or_user_cannot_be_assigned(
+    inactive_target: str,
+    expected_code: str,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, agent_membership = create_account(
+        db_session, OrganizationRole.AGENT, organization
+    )
+    if inactive_target == "membership":
+        agent_membership.is_active = False
+    else:
+        agent.is_active = False
+    db_session.commit()
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}/assignee",
+        headers=headers(admin, membership),
+        json={"assignee_id": str(agent.id)},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == expected_code
+
+
+def test_requester_role_cannot_be_assignee(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    requester, _, _ = create_account(
+        db_session, OrganizationRole.REQUESTER, organization
+    )
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}/assignee",
+        headers=headers(admin, membership),
+        json={"assignee_id": str(requester.id)},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "assignee_role_not_allowed"
+
+
+def test_assignee_can_be_replaced_removed_and_repeated_idempotently(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    first, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    second, _, _ = create_account(db_session, OrganizationRole.MANAGER, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=first)
+    path = f"/api/v1/tickets/{ticket.id}/assignee"
+
+    changed = client.patch(
+        path, headers=headers(admin, membership), json={"assignee_id": str(second.id)}
+    )
+    repeated = client.patch(
+        path, headers=headers(admin, membership), json={"assignee_id": str(second.id)}
+    )
+    removed = client.patch(
+        path, headers=headers(admin, membership), json={"assignee_id": None}
+    )
+
+    assert changed.json()["assignee"]["id"] == str(second.id)
+    assert repeated.status_code == 200
+    assert repeated.json()["assignee"]["id"] == str(second.id)
+    assert removed.status_code == 200
+    assert removed.json()["assignee"] is None
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (TicketStatus.CANCELLED, "cancelled_ticket_assignment"),
+        (TicketStatus.COMPLETED, "completed_ticket_assignment"),
+    ],
+)
+def test_terminal_ticket_rejects_assignment_changes(
+    status: TicketStatus,
+    code: str,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    ticket.status = status
+    db_session.commit()
+
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}/assignee",
+        headers=headers(admin, membership),
+        json={"assignee_id": str(agent.id)},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == code
+
+
+def test_external_ticket_is_hidden_on_assignment(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, _, membership = create_account(db_session, OrganizationRole.ADMIN)
+    other, other_org, _ = create_account(db_session, OrganizationRole.ADMIN)
+    agent, _, _ = create_account(db_session, OrganizationRole.AGENT, other_org)
+    category = create_category(db_session, other_org)
+    ticket = create_ticket(db_session, other_org, category, other)
+
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}/assignee",
+        headers=headers(admin, membership),
+        json={"assignee_id": str(agent.id)},
+    )
+    assert response.status_code == 404
