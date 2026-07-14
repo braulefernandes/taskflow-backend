@@ -10,7 +10,11 @@ from app.core.exceptions import AppException
 from app.models import Category, OrganizationRole, Ticket, TicketStatus
 from app.repositories.categories import CategoryRepository
 from app.repositories.tickets import TicketRepository
-from app.schemas.tickets import TicketCreateRequest, TicketUpdateRequest
+from app.schemas.tickets import (
+    TicketAssigneeUpdateRequest,
+    TicketCreateRequest,
+    TicketUpdateRequest,
+)
 
 
 class TicketService:
@@ -85,6 +89,56 @@ class TicketService:
             self.db.rollback()
             raise persistence_error() from exc
 
+    def update_assignee(
+        self,
+        *,
+        context: AuthContext,
+        ticket_id: uuid.UUID,
+        payload: TicketAssigneeUpdateRequest,
+    ) -> Ticket:
+        ticket = self.get_ticket(context=context, ticket_id=ticket_id)
+        self._ensure_assignment_allowed(ticket)
+
+        assignee = None
+        if payload.assignee_id is not None:
+            membership = self.repository.get_assignment_membership(
+                organization_id=context.organization.id,
+                user_id=payload.assignee_id,
+            )
+            if membership is None:
+                raise not_found_error()
+            if not membership.is_active:
+                raise assignment_error(
+                    "Membership do responsavel esta inativo.",
+                    "assignee_membership_inactive",
+                )
+            if not membership.user.is_active:
+                raise assignment_error(
+                    "Usuario responsavel esta inativo.",
+                    "assignee_user_inactive",
+                )
+            if membership.role not in {
+                OrganizationRole.ADMIN,
+                OrganizationRole.MANAGER,
+                OrganizationRole.AGENT,
+            }:
+                raise assignment_error(
+                    "Papel nao permitido para responsavel.",
+                    "assignee_role_not_allowed",
+                )
+            assignee = membership.user
+
+        if ticket.assignee_id == payload.assignee_id:
+            return ticket
+
+        ticket.assignee = assignee
+        try:
+            self.db.commit()
+            return self.get_ticket(context=context, ticket_id=ticket.id)
+        except (IntegrityError, SQLAlchemyError) as exc:
+            self.db.rollback()
+            raise persistence_error() from exc
+
     def _get_active_category(
         self, *, context: AuthContext, category_id: uuid.UUID
     ) -> Category:
@@ -135,6 +189,21 @@ class TicketService:
             code="insufficient_role",
         )
 
+    @staticmethod
+    def _ensure_assignment_allowed(ticket: Ticket) -> None:
+        if ticket.status == TicketStatus.CANCELLED:
+            raise AppException(
+                "Solicitacao cancelada nao pode ter o responsavel alterado.",
+                status_code=HTTPStatus.CONFLICT,
+                code="cancelled_ticket_assignment",
+            )
+        if ticket.status == TicketStatus.COMPLETED:
+            raise AppException(
+                "Solicitacao concluida deve ser reaberta antes de alterar o responsavel.",
+                status_code=HTTPStatus.CONFLICT,
+                code="completed_ticket_assignment",
+            )
+
 
 def not_found_error() -> AppException:
     return AppException(
@@ -150,3 +219,7 @@ def persistence_error() -> AppException:
         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         code="ticket_persistence_error",
     )
+
+
+def assignment_error(message: str, code: str) -> AppException:
+    return AppException(message, status_code=HTTPStatus.BAD_REQUEST, code=code)

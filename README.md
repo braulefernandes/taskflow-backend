@@ -490,6 +490,7 @@ POST  /api/v1/tickets
 GET   /api/v1/tickets?page=1&page_size=20
 GET   /api/v1/tickets/{id}
 PATCH /api/v1/tickets/{id}
+PATCH /api/v1/tickets/{id}/assignee
 ```
 
 Na criacao, o cliente envia somente `title`, `description`, `category_id`,
@@ -526,8 +527,28 @@ revelar a existencia do registro. Payloads de criacao e edicao rejeitam campos
 internos, incluindo status, organizacao, solicitante, responsavel e datas
 operacionais.
 
-Esta entrega nao implementa atribuicao, alteracao de status, cancelamento,
-comentarios, historico, atraso ou filtros avancados.
+A atribuicao usa o contrato abaixo; `null` remove o responsavel:
+
+```json
+{
+  "assignee_id": "b9cb341a-5503-47d9-aea3-fc20d33f1cbc"
+}
+```
+
+Somente `ADMIN` e `MANAGER` podem atribuir, trocar ou remover. O responsavel
+deve possuir membership ativa na mesma organizacao, usuario ativo e papel
+`ADMIN`, `MANAGER` ou `AGENT`. `REQUESTER` nao pode ser responsavel. Repetir a
+mesma atribuicao e idempotente. Remocao e permitida nos estados nao terminais.
+Tickets `COMPLETED` ou `CANCELLED` rejeitam qualquer alteracao de responsavel
+com `409`; a operacao nunca altera o status automaticamente.
+
+Erros especificos de atribuicao incluem `assignee_membership_inactive`,
+`assignee_user_inactive`, `assignee_role_not_allowed`,
+`cancelled_ticket_assignment` e `completed_ticket_assignment`. Responsavel ou
+ticket inexistente/externo retorna `404 resource_not_found`.
+
+Esta entrega nao implementa alteracao de status, cancelamento, comentarios,
+historico, atraso ou filtros avancados.
 
 ## Recuperacao de senha
 

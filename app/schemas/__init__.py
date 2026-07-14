@@ -13,6 +13,14 @@ from app.schemas.auth import (
     UserPublic,
 )
 
+from app.schemas.tickets import (
+    TicketAssigneeUpdateRequest,
+    TicketCreateRequest,
+    TicketListResponse,
+    TicketResponse,
+    TicketUpdateRequest,
+)
+
 __all__ = [
     "LoginRequest",
     "LogoutResponse",
@@ -24,19 +32,11 @@ __all__ = [
     "OrganizationPublic",
     "RegisterRequest",
     "RegisterResponse",
-    "TokenResponse",
-    "UserPublic",
-]
-from app.schemas.tickets import (
-    TicketCreateRequest,
-    TicketListResponse,
-    TicketResponse,
-    TicketUpdateRequest,
-)
-
-__all__ = [
+    "TicketAssigneeUpdateRequest",
     "TicketCreateRequest",
     "TicketListResponse",
     "TicketResponse",
     "TicketUpdateRequest",
+    "TokenResponse",
+    "UserPublic",
 ]
