@@ -481,6 +481,54 @@ Erros principais:
 - `409 category_already_exists`: nome normalizado duplicado na organizacao;
 - `422 validation_error`: payload ou nome invalido.
 
+## Solicitacoes
+
+Endpoints desta entrega:
+
+```text
+POST  /api/v1/tickets
+GET   /api/v1/tickets?page=1&page_size=20
+GET   /api/v1/tickets/{id}
+PATCH /api/v1/tickets/{id}
+```
+
+Na criacao, o cliente envia somente `title`, `description`, `category_id`,
+`priority` e `due_date` opcional. Organizacao e solicitante vem da sessao; o
+status inicial e `PENDING`, o responsavel e as datas internas comecam nulos.
+A categoria deve estar ativa e pertencer a organizacao, e o prazo, quando
+informado, deve estar no futuro.
+
+Exemplo:
+
+```json
+{
+  "title": "Acesso ao sistema financeiro",
+  "description": "Liberar acesso para fechamento mensal.",
+  "category_id": "02d895ee-095c-4fc6-a043-34e71bd0a2d1",
+  "priority": "HIGH",
+  "due_date": "2026-07-20T18:00:00Z"
+}
+```
+
+A resposta publica inclui organizacao, categoria, solicitante e responsavel em
+formatos resumidos e nunca expoe senha ou hash. A listagem retorna `page`,
+`page_size`, `total` e `items`, ordenados por criacao decrescente. O tamanho
+aceito e de 1 a 100, com padrao 20.
+
+Permissoes:
+
+- `ADMIN` e `MANAGER` criam, visualizam e editam qualquer solicitacao da organizacao;
+- `AGENT` cria e visualiza as que criou ou que estao atribuidas a ele, mas nao edita dados gerais;
+- `REQUESTER` cria e visualiza somente as proprias, podendo editar enquanto estiverem `PENDING` e sem responsavel.
+
+IDs externos ou fora do escopo do papel retornam `404 resource_not_found`, sem
+revelar a existencia do registro. Payloads de criacao e edicao rejeitam campos
+internos, incluindo status, organizacao, solicitante, responsavel e datas
+operacionais.
+
+Esta entrega nao implementa atribuicao, alteracao de status, cancelamento,
+comentarios, historico, atraso ou filtros avancados.
+
 ## Recuperacao de senha
 
 Endpoints:
