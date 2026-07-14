@@ -15,8 +15,14 @@ from app.core.security import get_password_hash, verify_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import Organization, OrganizationMember, OrganizationRole, PasswordResetToken, User
-from app.schemas.password_reset import ResetPasswordRequest
+from app.models import (
+    Organization,
+    OrganizationMember,
+    OrganizationRole,
+    PasswordResetToken,
+    User,
+)
+from app.schemas.password_reset import ForgotPasswordRequest, ResetPasswordRequest
 from app.services import password_reset as password_reset_module
 from app.services.email import DevelopmentEmailSender, get_email_sender
 from app.services.password_reset import (
@@ -384,3 +390,23 @@ def test_development_adapter_logs_no_email_url_or_token(caplog) -> None:
     assert token not in caplog.text
     assert reset_url not in caplog.text
     assert email not in caplog.text
+
+
+def test_email_adapter_failure_rolls_back_token_and_keeps_generic_response(
+    db_session: Session,
+    caplog,
+) -> None:
+    create_account(db_session)
+
+    class FailingEmailSender:
+        def send_password_reset(self, **_kwargs) -> None:
+            raise RuntimeError("sensitive provider detail")
+
+    service = PasswordResetService(db_session, FailingEmailSender())
+    with caplog.at_level("ERROR"):
+        message = service.request_reset(ForgotPasswordRequest(email="ana@example.com"))
+
+    assert message == FORGOT_PASSWORD_MESSAGE
+    assert db_session.scalar(select(PasswordResetToken)) is None
+    assert "sensitive provider detail" not in caplog.text
+    assert "ana@example.com" not in caplog.text

@@ -107,7 +107,9 @@ def test_admin_lists_only_members_from_current_organization(
     create_account(db_session, role=OrganizationRole.AGENT, organization=organization)
     create_account(db_session, role=OrganizationRole.REQUESTER)
 
-    response = client.get("/api/v1/members", headers=headers_for(admin, admin_membership))
+    response = client.get(
+        "/api/v1/members", headers=headers_for(admin, admin_membership)
+    )
 
     assert response.status_code == 200
     assert response.json()["total"] == 2
@@ -131,6 +133,58 @@ def test_non_admin_roles_cannot_manage_members(
     assert response.json()["error"]["code"] == "insufficient_role"
 
 
+@pytest.mark.parametrize(
+    ("method", "path_suffix", "payload"),
+    [
+        ("post", "", member_payload(email="negado@example.com")),
+        ("patch", "/self", {"role": "ADMIN"}),
+        ("patch", "/self/status", {"is_active": False}),
+    ],
+)
+def test_non_admin_cannot_mutate_members(
+    method: str,
+    path_suffix: str,
+    payload: dict[str, object],
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user, _organization, membership = create_account(
+        db_session,
+        role=OrganizationRole.MANAGER,
+    )
+    path = "/api/v1/members"
+    if path_suffix:
+        path += path_suffix.replace("self", str(membership.id))
+
+    response = client.request(
+        method,
+        path,
+        headers=headers_for(user, membership),
+        json=payload,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "insufficient_role"
+
+
+def test_inactive_membership_cannot_access_member_management(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, _organization, membership = create_account(
+        db_session,
+        membership_active=False,
+    )
+
+    response = client.get(
+        "/api/v1/members",
+        headers=headers_for(admin, membership),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "membership_inactive"
+
+
 def test_admin_creates_user_and_membership_without_exposing_hash(
     client: TestClient,
     db_session: Session,
@@ -149,12 +203,15 @@ def test_admin_creates_user_and_membership_without_exposing_hash(
     assert "password" not in response.text
     user = db_session.scalar(select(User).where(User.email == "novo@example.com"))
     assert user is not None
-    assert db_session.scalar(
-        select(OrganizationMember).where(
-            OrganizationMember.user_id == user.id,
-            OrganizationMember.organization_id == organization.id,
+    assert (
+        db_session.scalar(
+            select(OrganizationMember).where(
+                OrganizationMember.user_id == user.id,
+                OrganizationMember.organization_id == organization.id,
+            )
         )
-    ) is not None
+        is not None
+    )
 
 
 def test_existing_user_is_associated_without_duplication(
@@ -256,6 +313,35 @@ def test_member_from_another_organization_is_hidden(
     response = client.get(
         f"/api/v1/members/{other_membership.id}",
         headers=headers_for(admin, admin_membership),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "resource_not_found"
+
+
+@pytest.mark.parametrize(
+    ("path_suffix", "payload"),
+    [
+        ("", {"role": "MANAGER"}),
+        ("/status", {"is_active": False}),
+    ],
+)
+def test_member_from_another_organization_cannot_be_mutated(
+    path_suffix: str,
+    payload: dict[str, object],
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, _organization, admin_membership = create_account(db_session)
+    _other_user, _other_org, other_membership = create_account(
+        db_session,
+        role=OrganizationRole.AGENT,
+    )
+
+    response = client.patch(
+        f"/api/v1/members/{other_membership.id}{path_suffix}",
+        headers=headers_for(admin, admin_membership),
+        json=payload,
     )
 
     assert response.status_code == 404

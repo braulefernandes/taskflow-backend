@@ -12,7 +12,13 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models import Category, Organization, OrganizationMember, OrganizationRole, User
+from app.models import (
+    Category,
+    Organization,
+    OrganizationMember,
+    OrganizationRole,
+    User,
+)
 
 
 @pytest.fixture
@@ -136,6 +142,35 @@ def test_non_admin_roles_cannot_create_category(
         "/api/v1/categories",
         headers=headers_for(user, membership),
         json={"name": "Financeiro"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "insufficient_role"
+
+
+@pytest.mark.parametrize(
+    ("path_suffix", "payload"),
+    [
+        ("", {"name": "Nome Negado"}),
+        ("/status", {"is_active": False}),
+    ],
+)
+def test_non_admin_roles_cannot_mutate_category(
+    path_suffix: str,
+    payload: dict[str, object],
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user, organization, membership = create_account(
+        db_session,
+        role=OrganizationRole.MANAGER,
+    )
+    category = create_category(db_session, organization, name="Protegida")
+
+    response = client.patch(
+        f"/api/v1/categories/{category.id}{path_suffix}",
+        headers=headers_for(user, membership),
+        json=payload,
     )
 
     assert response.status_code == 403
@@ -321,6 +356,48 @@ def test_category_id_from_another_organization_is_hidden(
     assert response.json()["error"]["code"] == "resource_not_found"
 
 
+def test_category_from_another_organization_cannot_be_edited(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, _organization, membership = create_account(db_session)
+    _other_admin, other_org, _other_membership = create_account(db_session)
+    external_category = create_category(db_session, other_org, name="Externa")
+
+    response = client.patch(
+        f"/api/v1/categories/{external_category.id}",
+        headers=headers_for(admin, membership),
+        json={"name": "Tentativa"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "resource_not_found"
+
+
+def test_inactive_category_detail_is_hidden_from_non_admin(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    requester, organization, membership = create_account(
+        db_session,
+        role=OrganizationRole.REQUESTER,
+    )
+    category = create_category(
+        db_session,
+        organization,
+        name="Inativa",
+        is_active=False,
+    )
+
+    response = client.get(
+        f"/api/v1/categories/{category.id}",
+        headers=headers_for(requester, membership),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "resource_not_found"
+
+
 @pytest.mark.parametrize("invalid_name", ["", "   ", None])
 def test_category_name_is_required_and_validated(
     invalid_name: str | None,
@@ -352,4 +429,7 @@ def test_category_has_no_physical_delete_endpoint(
     )
 
     assert response.status_code == 405
-    assert db_session.scalar(select(Category).where(Category.id == category.id)) is not None
+    assert (
+        db_session.scalar(select(Category).where(Category.id == category.id))
+        is not None
+    )
