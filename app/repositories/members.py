@@ -68,11 +68,14 @@ class MemberRepository:
         user_id: uuid.UUID,
         organization_id: uuid.UUID,
     ) -> bool:
-        return self.db.scalar(
-            select(OrganizationMember.id)
-            .where(OrganizationMember.user_id == user_id)
-            .where(OrganizationMember.organization_id == organization_id)
-        ) is not None
+        return (
+            self.db.scalar(
+                select(OrganizationMember.id)
+                .where(OrganizationMember.user_id == user_id)
+                .where(OrganizationMember.organization_id == organization_id)
+            )
+            is not None
+        )
 
     def create_user(self, *, name: str, email: str, password_hash: str) -> User:
         user = User(name=name, email=email, password_hash=password_hash, is_active=True)

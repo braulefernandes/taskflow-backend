@@ -4,7 +4,15 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -18,7 +26,11 @@ if TYPE_CHECKING:
 class OrganizationMember(Base):
     __tablename__ = "organization_members"
     __table_args__ = (
-        UniqueConstraint("organization_id", "user_id", name="uq_organization_members_organization_id_user_id"),
+        UniqueConstraint(
+            "organization_id",
+            "user_id",
+            name="uq_organization_members_organization_id_user_id",
+        ),
         Index("ix_organization_members_organization_id", "organization_id"),
         Index("ix_organization_members_user_id", "user_id"),
         Index("ix_organization_members_role", "role"),
@@ -41,7 +53,9 @@ class OrganizationMember(Base):
         ),
         nullable=False,
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

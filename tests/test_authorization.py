@@ -16,7 +16,9 @@ from app.core.exceptions import AppException
 from app.models import Organization, OrganizationMember, OrganizationRole, User
 
 
-def make_context(role: OrganizationRole, *, membership_active: bool = True) -> AuthContext:
+def make_context(
+    role: OrganizationRole, *, membership_active: bool = True
+) -> AuthContext:
     user = User(
         id=uuid.uuid4(),
         name="Usuario",

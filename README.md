@@ -515,8 +515,46 @@ Exemplo:
 
 A resposta publica inclui organizacao, categoria, solicitante e responsavel em
 formatos resumidos e nunca expoe senha ou hash. A listagem retorna `page`,
-`page_size`, `total` e `items`, ordenados por criacao decrescente. O tamanho
-aceito e de 1 a 100, com padrao 20.
+`page_size`, `total`, `total_pages` e `items`. O tamanho aceito e de 1 a 100,
+com padrao 20.
+
+### Pesquisa, filtros, ordenacao e paginacao
+
+`GET /api/v1/tickets` aceita:
+
+| Parametro | Regra |
+|---|---|
+| `search` | trecho do titulo, sem diferenciar maiusculas e minusculas; recebe trim |
+| `status` | `PENDING`, `IN_PROGRESS`, `WAITING`, `COMPLETED` ou `CANCELLED` |
+| `priority` | `LOW`, `MEDIUM`, `HIGH` ou `URGENT` |
+| `category_id` | UUID da categoria |
+| `assignee_id` | UUID do responsavel |
+| `created_from`, `created_to` | intervalo inclusivo de criacao |
+| `due_from`, `due_to` | intervalo inclusivo de prazo |
+| `overdue` | `true` para atrasadas e `false` para nao atrasadas |
+| `sort_by` | `created_at` ou `due_date` |
+| `sort_order` | `asc` ou `desc` |
+| `page` | pagina a partir de 1; padrao 1 |
+| `page_size` | de 1 a 100; padrao 20 |
+
+Todos os filtros podem ser combinados e sao aplicados junto ao isolamento da
+organizacao e ao escopo do papel. O `total` usa os mesmos filtros dos itens,
+antes de `offset` e `limit`. Exemplo:
+
+```text
+GET /api/v1/tickets?search=financeiro&status=IN_PROGRESS&priority=HIGH&overdue=true&sort_by=due_date&sort_order=asc&page=1&page_size=20
+```
+
+Datas sem timezone sao interpretadas como UTC; datas com offset sao convertidas
+para UTC. Os limites `from` e `to` sao inclusivos. Um limite inicial posterior
+ao final retorna `422`. A ordenacao padrao e `created_at desc`; empates usam o
+UUID na mesma direcao para manter paginas estaveis. Prazos nulos ficam ao final.
+Campos de ordenacao arbitrarios sao rejeitados.
+
+Uma solicitacao e atrasada quando possui `due_date` anterior ao instante da
+consulta e seu status nao e `COMPLETED` nem `CANCELLED`. O filtro e calculado na
+consulta e nao depende de coluna persistida. `overdue=false` inclui prazos
+futuros, tickets sem prazo e tickets em estado terminal.
 
 Permissoes:
 
@@ -628,7 +666,163 @@ persistidos. Datetimes sem timezone vindos de bancos de teste sao tratados como
 UTC defensivamente.
 
 Esta entrega nao implementa motivo de cancelamento, exclusao fisica, filtros de
-atraso, comentarios, historico, dashboard ou filtros avancados.
+atraso, historico automatico, dashboard ou filtros avancados.
+
+## Comentarios de solicitacoes
+
+Endpoints autenticados:
+
+```text
+POST /api/v1/tickets/{id}/comments
+GET  /api/v1/tickets/{id}/comments
+```
+
+A criacao recebe exclusivamente `content`, com trim nas extremidades e tamanho
+entre 1 e 5000 caracteres:
+
+```json
+{
+  "content": "Informacao adicional para o atendimento."
+}
+```
+
+A resposta `201 Created` e cada item da listagem possuem somente dados publicos:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "ticket_id": "00000000-0000-0000-0000-000000000000",
+  "content": "Informacao adicional para o atendimento.",
+  "author": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": "Ana Silva",
+    "avatar_url": null
+  },
+  "created_at": "2026-07-15T15:00:00Z",
+  "updated_at": "2026-07-15T15:00:00Z"
+}
+```
+
+`ADMIN` e `MANAGER` acessam os comentarios de qualquer ticket da organizacao.
+`AGENT` acessa tickets criados por ele ou atribuidos a ele. `REQUESTER` acessa
+somente os tickets proprios. Tickets externos ou fora desse escopo retornam
+`404 resource_not_found`, sem revelar sua existencia.
+
+Tickets concluidos continuam aceitando comentarios para permitir complementos
+e esclarecimentos posteriores. Tickets cancelados bloqueiam novos comentarios
+para todos os papeis com `409 cancelled_ticket_comment`; comentarios existentes
+continuam disponiveis para leitura. A listagem retorna um array, sem paginacao,
+em ordem cronologica crescente por `created_at`, usando `id` como desempate.
+
+Conteudo ausente, vazio, composto apenas por espacos ou acima do limite retorna
+`422 validation_error`. Falhas de persistencia retornam
+`500 comment_persistence_error`. A API nunca retorna senha ou hash do autor.
+
+## Historico de solicitacoes
+
+Endpoint autenticado:
+
+```text
+GET /api/v1/tickets/{id}/history
+```
+
+A timeline registra `CREATED`, `TITLE_CHANGED`, `DESCRIPTION_CHANGED`,
+`CATEGORY_CHANGED`, `PRIORITY_CHANGED`, `DUE_DATE_CHANGED`, `ASSIGNED`,
+`ASSIGNEE_CHANGED`, `ASSIGNEE_REMOVED`, `STATUS_CHANGED`, `COMPLETED`,
+`REOPENED` e `CANCELLED`. Conclusao, reabertura e cancelamento usam somente a
+acao especifica, sem um segundo evento generico de status. Repetir atribuicao,
+cancelamento ou edicao com o mesmo valor nao cria evento.
+
+Cada item retorna ID, acao, campo alterado quando aplicavel, valores anterior e
+novo, autor publico e data:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "action": "PRIORITY_CHANGED",
+  "field_name": "priority",
+  "old_value": "MEDIUM",
+  "new_value": "HIGH",
+  "author": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": "Ana Silva",
+    "avatar_url": null
+  },
+  "created_at": "2026-07-15T16:00:00Z"
+}
+```
+
+Status e prioridades usam seus codigos estaveis. Datas usam ISO 8601 em UTC.
+Categoria e responsavel usam `ID | nome`; ausencia de valor e representada por
+`null`. Valores contendo termos associados a senha, hash, token ou segredo sao
+substituidos por `[REDACTED]`, e nenhum dado de autenticacao integra a resposta.
+
+Eventos sao adicionados pelo service antes do mesmo `commit` da alteracao do
+ticket. Uma falha ao persistir o historico executa rollback da alteracao
+principal, evitando estado parcialmente auditado. Repositories nao executam
+commits.
+
+A listagem segue exatamente a visibilidade do ticket: `ADMIN` e `MANAGER`
+visualizam qualquer ticket da organizacao; `AGENT`, somente tickets criados por
+ele ou atribuidos a ele; `REQUESTER`, somente tickets proprios. Recursos
+externos ou fora do escopo retornam `404`. A ordem e cronologica crescente por
+`created_at`, adequada para timeline, com `id` como desempate.
+
+## Dashboard gerencial
+
+Endpoints exclusivos de `ADMIN` e `MANAGER`:
+
+```text
+GET /api/v1/dashboard/summary
+GET /api/v1/dashboard/status-distribution
+GET /api/v1/dashboard/priority-distribution
+GET /api/v1/dashboard/recent?limit=5
+GET /api/v1/dashboard/overdue?limit=5
+```
+
+`AGENT` e `REQUESTER` recebem `403 insufficient_role`; suas areas iniciais
+simplificadas ficam fora desta entrega. Todas as consultas filtram diretamente
+por `organization_id` da sessao e nunca aceitam organizacao por parametro.
+
+O summary inclui todos os tickets nao excluidos fisicamente, inclusive
+cancelados, e retorna cada status separadamente:
+
+```json
+{
+  "total": 12,
+  "pending": 3,
+  "in_progress": 2,
+  "waiting": 1,
+  "completed": 5,
+  "cancelled": 1,
+  "overdue": 2,
+  "average_resolution_hours": 6.25
+}
+```
+
+`WAITING` nao integra `in_progress`; ambos possuem contagens independentes. Uma
+solicitacao e atrasada quando possui prazo anterior ao instante UTC da consulta
+e nao esta `COMPLETED` nem `CANCELLED`. A metrica nao usa coluna persistida.
+
+O tempo medio de resolucao usa somente tickets `COMPLETED` com
+`completed_at`, conforme a formula:
+
+```text
+media((completed_at - created_at) em segundos) / 3600
+```
+
+O resultado e expresso em horas, arredondado para duas casas. Sem tickets
+concluidos, retorna `null`. Os calculos usam timestamps UTC.
+
+As distribuicoes retornam todos os valores de status e prioridade, inclusive
+os que possuem contagem zero. Recentes sao ordenados por `created_at desc` e
+UUID decrescente. Maiores atrasos incluem somente tickets realmente atrasados,
+ordenados pela duracao decrescente, com `due_date` e `overdue_seconds`.
+
+`recent` e `overdue` aceitam `limit` entre 1 e 50, com padrao 5. As respostas
+usam dados resumidos de ticket, categoria e responsavel, sem descricao ou dados
+sensíveis. Agregacoes e medias sao calculadas no banco; listas sao limitadas e
+carregam categoria e responsavel na mesma query para evitar N+1.
 
 ## Recuperacao de senha
 

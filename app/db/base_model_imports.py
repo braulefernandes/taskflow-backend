@@ -5,6 +5,8 @@ from app.models import (
     OrganizationMember,
     PasswordResetToken,
     Ticket,
+    TicketComment,
+    TicketHistory,
     User,
 )
 
@@ -15,5 +17,7 @@ __all__ = [
     "OrganizationMember",
     "PasswordResetToken",
     "Ticket",
+    "TicketComment",
+    "TicketHistory",
     "User",
 ]

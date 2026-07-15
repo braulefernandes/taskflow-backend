@@ -109,7 +109,11 @@ class PasswordResetService:
         expires_at = reset_token.expires_at
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
-        return expires_at > now and reset_token.user is not None and reset_token.user.is_active
+        return (
+            expires_at > now
+            and reset_token.user is not None
+            and reset_token.user.is_active
+        )
 
 
 def invalid_reset_token_error() -> AppException:

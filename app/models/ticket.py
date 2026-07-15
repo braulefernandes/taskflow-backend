@@ -13,6 +13,8 @@ from app.models.ticket_enums import TicketPriority, TicketStatus
 if TYPE_CHECKING:
     from app.models.category import Category
     from app.models.organization import Organization
+    from app.models.ticket_comment import TicketComment
+    from app.models.ticket_history import TicketHistory
     from app.models.user import User
 
 
@@ -96,4 +98,10 @@ class Ticket(Base):
     )
     assignee: Mapped[User | None] = relationship(
         back_populates="assigned_tickets", foreign_keys=[assignee_id]
+    )
+    comments: Mapped[list[TicketComment]] = relationship(
+        back_populates="ticket", passive_deletes=True
+    )
+    history: Mapped[list[TicketHistory]] = relationship(
+        back_populates="ticket", passive_deletes=True
     )

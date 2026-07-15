@@ -84,7 +84,9 @@ def create_account(
     return user, organization, membership
 
 
-def post_login(client: TestClient, *, email: str = "ana@example.com", password: str = "Senha123"):
+def post_login(
+    client: TestClient, *, email: str = "ana@example.com", password: str = "Senha123"
+):
     return client.post(
         "/api/v1/auth/login",
         json={
@@ -130,7 +132,9 @@ def test_login_normalizes_email(client: TestClient, db_session: Session) -> None
     assert response.status_code == 200
 
 
-def test_login_rejects_invalid_password(client: TestClient, db_session: Session) -> None:
+def test_login_rejects_invalid_password(
+    client: TestClient, db_session: Session
+) -> None:
     create_account(db_session)
 
     response = post_login(client, password="SenhaErrada123")
@@ -242,4 +246,7 @@ def test_login_does_not_persist_sensitive_data_in_response(
 
     assert response.status_code == 200
     assert set(response.json()) == {"access_token", "token_type", "expires_in"}
-    assert db_session.scalar(select(User).where(User.email == "ana@example.com")) is not None
+    assert (
+        db_session.scalar(select(User).where(User.email == "ana@example.com"))
+        is not None
+    )
