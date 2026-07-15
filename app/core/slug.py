@@ -12,6 +12,8 @@ def slugify(value: str, *, max_length: int = SLUG_MAX_LENGTH) -> str:
     return slug[:max_length].strip("-") or "organization"
 
 
-def slug_with_suffix(base_slug: str, suffix: int, *, max_length: int = SLUG_MAX_LENGTH) -> str:
+def slug_with_suffix(
+    base_slug: str, suffix: int, *, max_length: int = SLUG_MAX_LENGTH
+) -> str:
     suffix_text = f"-{suffix}"
     return f"{base_slug[: max_length - len(suffix_text)].strip('-')}{suffix_text}"

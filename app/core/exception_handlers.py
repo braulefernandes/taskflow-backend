@@ -26,15 +26,13 @@ def error_response(
     return JSONResponse(status_code=status_code, content=content)
 
 
-def sanitize_validation_errors(errors: list[dict[str, object]]) -> list[dict[str, object]]:
+def sanitize_validation_errors(
+    errors: list[dict[str, object]],
+) -> list[dict[str, object]]:
     sanitized_errors: list[dict[str, object]] = []
     for error in errors:
         sanitized_errors.append(
-            {
-                key: value
-                for key, value in error.items()
-                if key not in {"input", "ctx"}
-            }
+            {key: value for key, value in error.items() if key not in {"input", "ctx"}}
         )
     return sanitized_errors
 

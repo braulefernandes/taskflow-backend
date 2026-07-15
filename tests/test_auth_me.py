@@ -109,7 +109,9 @@ def test_auth_me_with_valid_token(client: TestClient, db_session: Session) -> No
     assert response.status_code == 200
 
 
-def test_auth_me_response_contains_user(client: TestClient, db_session: Session) -> None:
+def test_auth_me_response_contains_user(
+    client: TestClient, db_session: Session
+) -> None:
     user, _organization, membership = create_account(db_session)
 
     response = get_me(client, token_for(user, membership))
@@ -140,7 +142,9 @@ def test_auth_me_response_contains_organization(
     }
 
 
-def test_auth_me_response_contains_role(client: TestClient, db_session: Session) -> None:
+def test_auth_me_response_contains_role(
+    client: TestClient, db_session: Session
+) -> None:
     user, _organization, membership = create_account(db_session)
 
     response = get_me(client, token_for(user, membership))

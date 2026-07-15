@@ -11,9 +11,13 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", alias="APP_ENV")
     debug: bool = Field(default=False, alias="APP_DEBUG")
     database_url: str = Field(alias="DATABASE_URL")
-    jwt_secret_key: str = Field(default="change-me-in-local-env", alias="JWT_SECRET_KEY")
+    jwt_secret_key: str = Field(
+        default="change-me-in-local-env", alias="JWT_SECRET_KEY"
+    )
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
-    access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    access_token_expire_minutes: int = Field(
+        default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES"
+    )
     password_reset_token_expire_minutes: int = Field(
         default=30,
         alias="PASSWORD_RESET_TOKEN_EXPIRE_MINUTES",

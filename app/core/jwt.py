@@ -94,7 +94,9 @@ def encode_jwt(
     signing_input = ".".join(
         [
             base64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8")),
-            base64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8")),
+            base64url_encode(
+                json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            ),
         ]
     )
     signature = hmac.new(

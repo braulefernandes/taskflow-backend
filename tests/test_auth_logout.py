@@ -133,7 +133,9 @@ def test_logout_is_stateless_and_does_not_revoke_token(
 
     first_response = post_logout(client, token)
     second_response = post_logout(client, token)
-    me_response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    me_response = client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200

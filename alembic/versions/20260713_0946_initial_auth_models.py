@@ -37,8 +37,18 @@ def upgrade() -> None:
         sa.Column("password_hash", sa.String(length=255), nullable=False),
         sa.Column("avatar_url", sa.String(length=2048), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
         sa.UniqueConstraint("email", name=op.f("uq_users_email")),
     )
@@ -49,12 +59,24 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("slug", sa.String(length=120), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_organizations")),
         sa.UniqueConstraint("slug", name=op.f("uq_organizations_slug")),
     )
-    op.create_index(op.f("ix_organizations_slug"), "organizations", ["slug"], unique=False)
+    op.create_index(
+        op.f("ix_organizations_slug"), "organizations", ["slug"], unique=False
+    )
 
     op.create_table(
         "organization_members",
@@ -63,8 +85,18 @@ def upgrade() -> None:
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("role", organization_role_enum, nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(
             ["organization_id"],
             ["organizations.id"],
@@ -90,8 +122,15 @@ def upgrade() -> None:
         ["organization_id"],
         unique=False,
     )
-    op.create_index("ix_organization_members_role", "organization_members", ["role"], unique=False)
-    op.create_index("ix_organization_members_user_id", "organization_members", ["user_id"], unique=False)
+    op.create_index(
+        "ix_organization_members_role", "organization_members", ["role"], unique=False
+    )
+    op.create_index(
+        "ix_organization_members_user_id",
+        "organization_members",
+        ["user_id"],
+        unique=False,
+    )
 
     op.create_table(
         "password_reset_tokens",
@@ -100,7 +139,12 @@ def upgrade() -> None:
         sa.Column("token_hash", sa.String(length=255), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("used_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(
             ["user_id"],
             ["users.id"],
@@ -108,7 +152,9 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_password_reset_tokens")),
-        sa.UniqueConstraint("token_hash", name=op.f("uq_password_reset_tokens_token_hash")),
+        sa.UniqueConstraint(
+            "token_hash", name=op.f("uq_password_reset_tokens_token_hash")
+        ),
     )
     op.create_index(
         "ix_password_reset_tokens_expires_at",
@@ -122,18 +168,31 @@ def upgrade() -> None:
         ["token_hash"],
         unique=False,
     )
-    op.create_index("ix_password_reset_tokens_user_id", "password_reset_tokens", ["user_id"], unique=False)
+    op.create_index(
+        "ix_password_reset_tokens_user_id",
+        "password_reset_tokens",
+        ["user_id"],
+        unique=False,
+    )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_password_reset_tokens_user_id", table_name="password_reset_tokens")
-    op.drop_index("ix_password_reset_tokens_token_hash", table_name="password_reset_tokens")
-    op.drop_index("ix_password_reset_tokens_expires_at", table_name="password_reset_tokens")
+    op.drop_index(
+        "ix_password_reset_tokens_user_id", table_name="password_reset_tokens"
+    )
+    op.drop_index(
+        "ix_password_reset_tokens_token_hash", table_name="password_reset_tokens"
+    )
+    op.drop_index(
+        "ix_password_reset_tokens_expires_at", table_name="password_reset_tokens"
+    )
     op.drop_table("password_reset_tokens")
 
     op.drop_index("ix_organization_members_user_id", table_name="organization_members")
     op.drop_index("ix_organization_members_role", table_name="organization_members")
-    op.drop_index("ix_organization_members_organization_id", table_name="organization_members")
+    op.drop_index(
+        "ix_organization_members_organization_id", table_name="organization_members"
+    )
     op.drop_table("organization_members")
 
     op.drop_index(op.f("ix_organizations_slug"), table_name="organizations")

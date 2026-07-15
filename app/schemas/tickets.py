@@ -1,5 +1,7 @@
 import uuid
 from datetime import UTC, datetime
+from enum import Enum
+from math import ceil
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -75,6 +77,65 @@ class TicketStatusUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class TicketSortBy(str, Enum):
+    CREATED_AT = "created_at"
+    DUE_DATE = "due_date"
+
+
+class SortOrder(str, Enum):
+    ASC = "asc"
+    DESC = "desc"
+
+
+class TicketListFilters(BaseModel):
+    search: str | None = Field(default=None, max_length=255)
+    status: TicketStatus | None = None
+    priority: TicketPriority | None = None
+    category_id: uuid.UUID | None = None
+    assignee_id: uuid.UUID | None = None
+    created_from: datetime | None = None
+    created_to: datetime | None = None
+    due_from: datetime | None = None
+    due_to: datetime | None = None
+    overdue: bool | None = None
+    sort_by: TicketSortBy = TicketSortBy.CREATED_AT
+    sort_order: SortOrder = SortOrder.DESC
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("search", mode="before")
+    @classmethod
+    def trim_search(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @model_validator(mode="after")
+    def validate_periods(self) -> "TicketListFilters":
+        for start_name, end_name in (
+            ("created_from", "created_to"),
+            ("due_from", "due_to"),
+        ):
+            start = getattr(self, start_name)
+            end = getattr(self, end_name)
+            if start is not None and end is not None:
+                if normalize_filter_datetime(start) > normalize_filter_datetime(end):
+                    raise ValueError(
+                        f"{start_name} deve ser anterior ou igual a {end_name}."
+                    )
+        return self
+
+
+def normalize_filter_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    normalized = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    return normalized.astimezone(UTC)
+
+
 class OrganizationSummary(BaseModel):
     id: uuid.UUID
     name: str
@@ -142,4 +203,21 @@ class TicketListResponse(BaseModel):
     page: int
     page_size: int
     total: int
+    total_pages: int
     items: list[TicketResponse]
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        filters: TicketListFilters,
+        total: int,
+        items: list[TicketResponse],
+    ) -> "TicketListResponse":
+        return cls(
+            page=filters.page,
+            page_size=filters.page_size,
+            total=total,
+            total_pages=ceil(total / filters.page_size),
+            items=items,
+        )

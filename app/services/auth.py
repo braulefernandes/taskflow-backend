@@ -120,9 +120,7 @@ class AuthService:
         base_slug = slugify(organization_name)
         for attempt in range(1, MAX_SLUG_COLLISION_ATTEMPTS + 1):
             candidate = (
-                base_slug
-                if attempt == 1
-                else slug_with_suffix(base_slug, attempt)
+                base_slug if attempt == 1 else slug_with_suffix(base_slug, attempt)
             )
             if not self.repository.organization_slug_exists(candidate):
                 return candidate

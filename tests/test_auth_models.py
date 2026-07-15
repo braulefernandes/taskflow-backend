@@ -6,7 +6,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
-from app.models import Organization, OrganizationMember, OrganizationRole, PasswordResetToken, User
+from app.models import (
+    Organization,
+    OrganizationMember,
+    OrganizationRole,
+    PasswordResetToken,
+    User,
+)
 
 
 @pytest.fixture
@@ -98,8 +104,12 @@ def test_duplicate_membership_is_not_allowed(db_session: Session) -> None:
     organization = make_organization()
     db_session.add_all(
         [
-            OrganizationMember(user=user, organization=organization, role=OrganizationRole.ADMIN),
-            OrganizationMember(user=user, organization=organization, role=OrganizationRole.AGENT),
+            OrganizationMember(
+                user=user, organization=organization, role=OrganizationRole.ADMIN
+            ),
+            OrganizationMember(
+                user=user, organization=organization, role=OrganizationRole.AGENT
+            ),
         ]
     )
 
