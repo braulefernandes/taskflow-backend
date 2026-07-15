@@ -481,6 +481,155 @@ Erros principais:
 - `409 category_already_exists`: nome normalizado duplicado na organizacao;
 - `422 validation_error`: payload ou nome invalido.
 
+## Solicitacoes
+
+Endpoints desta entrega:
+
+```text
+POST  /api/v1/tickets
+GET   /api/v1/tickets?page=1&page_size=20
+GET   /api/v1/tickets/{id}
+PATCH /api/v1/tickets/{id}
+PATCH /api/v1/tickets/{id}/assignee
+PATCH /api/v1/tickets/{id}/status
+POST  /api/v1/tickets/{id}/cancel
+```
+
+Na criacao, o cliente envia somente `title`, `description`, `category_id`,
+`priority` e `due_date` opcional. Organizacao e solicitante vem da sessao; o
+status inicial e `PENDING`, o responsavel e as datas internas comecam nulos.
+A categoria deve estar ativa e pertencer a organizacao, e o prazo, quando
+informado, deve estar no futuro.
+
+Exemplo:
+
+```json
+{
+  "title": "Acesso ao sistema financeiro",
+  "description": "Liberar acesso para fechamento mensal.",
+  "category_id": "02d895ee-095c-4fc6-a043-34e71bd0a2d1",
+  "priority": "HIGH",
+  "due_date": "2026-07-20T18:00:00Z"
+}
+```
+
+A resposta publica inclui organizacao, categoria, solicitante e responsavel em
+formatos resumidos e nunca expoe senha ou hash. A listagem retorna `page`,
+`page_size`, `total` e `items`, ordenados por criacao decrescente. O tamanho
+aceito e de 1 a 100, com padrao 20.
+
+Permissoes:
+
+- `ADMIN` e `MANAGER` criam, visualizam e editam qualquer solicitacao da organizacao;
+- `AGENT` cria e visualiza as que criou ou que estao atribuidas a ele, mas nao edita dados gerais;
+- `REQUESTER` cria e visualiza somente as proprias, podendo editar enquanto estiverem `PENDING` e sem responsavel.
+
+IDs externos ou fora do escopo do papel retornam `404 resource_not_found`, sem
+revelar a existencia do registro. Payloads de criacao e edicao rejeitam campos
+internos, incluindo status, organizacao, solicitante, responsavel e datas
+operacionais.
+
+A atribuicao usa o contrato abaixo; `null` remove o responsavel:
+
+```json
+{
+  "assignee_id": "b9cb341a-5503-47d9-aea3-fc20d33f1cbc"
+}
+```
+
+Somente `ADMIN` e `MANAGER` podem atribuir, trocar ou remover. O responsavel
+deve possuir membership ativa na mesma organizacao, usuario ativo e papel
+`ADMIN`, `MANAGER` ou `AGENT`. `REQUESTER` nao pode ser responsavel. Repetir a
+mesma atribuicao e idempotente. Remocao e permitida nos estados nao terminais.
+Tickets `COMPLETED` ou `CANCELLED` rejeitam qualquer alteracao de responsavel
+com `409`; a operacao nunca altera o status automaticamente.
+
+Erros especificos de atribuicao incluem `assignee_membership_inactive`,
+`assignee_user_inactive`, `assignee_role_not_allowed`,
+`cancelled_ticket_assignment` e `completed_ticket_assignment`. Responsavel ou
+ticket inexistente/externo retorna `404 resource_not_found`.
+
+### Status, prioridade e prazo
+
+A mudanca de status recebe somente o novo status:
+
+```json
+{
+  "status": "IN_PROGRESS"
+}
+```
+
+Maquina de estados permitida:
+
+```text
+PENDING     -> IN_PROGRESS | WAITING
+IN_PROGRESS -> WAITING | COMPLETED
+WAITING     -> IN_PROGRESS | COMPLETED
+COMPLETED   -> IN_PROGRESS
+CANCELLED   -> nenhuma transicao nesta entrega
+```
+
+`ADMIN` e `MANAGER` alteram o status de qualquer ticket da organizacao.
+`AGENT` altera apenas tickets atribuidos a ele. `REQUESTER` nao altera status
+operacional. `IN_PROGRESS`, `WAITING` e `COMPLETED` exigem responsavel; o status
+`PENDING` pode permanecer sem responsavel.
+
+A primeira entrada em `IN_PROGRESS` preenche `started_at` em UTC e entradas
+posteriores preservam o valor original. A entrada em `COMPLETED` preenche
+`completed_at`; a reabertura controlada para `IN_PROGRESS` limpa
+`completed_at`. `cancelled_at` nao e modificado.
+
+Prioridade e prazo continuam no `PATCH /api/v1/tickets/{id}`:
+
+```json
+{
+  "priority": "URGENT",
+  "due_date": "2026-07-25T18:00:00Z"
+}
+```
+
+Somente `ADMIN` e `MANAGER` podem alterar prioridade ou prazo. O prazo deve
+estar no futuro e pode ser removido com `null`. Tickets `COMPLETED` e
+`CANCELLED` bloqueiam ambas as alteracoes ate eventual reabertura. Valores de
+prioridade fora de `LOW`, `MEDIUM`, `HIGH` e `URGENT` sao rejeitados.
+
+Erros principais: `invalid_status_transition`, `assignee_required_for_status`,
+`terminal_ticket_planning_update`, `due_date_in_past` e `insufficient_role`.
+Nenhuma operacao desta entrega calcula ou persiste um novo status de atraso.
+
+### Cancelamento e atraso
+
+O cancelamento usa `POST /api/v1/tickets/{id}/cancel`, sem corpo e sem motivo,
+pois ainda nao existe campo de motivo modelado. Ele e logico: o registro e
+preservado, o status muda para `CANCELLED`, `cancelled_at` recebe o instante UTC
+e `completed_at` permanece nulo. Repetir o cancelamento retorna o mesmo ticket
+sem substituir `cancelled_at`.
+
+`ADMIN` e `MANAGER` cancelam qualquer ticket da organizacao. `REQUESTER` pode
+cancelar somente um ticket proprio enquanto `PENDING`. `AGENT` nao cancela.
+Tickets concluidos retornam `409 completed_ticket_cancellation`. Tickets
+cancelados nao podem ser editados, receber responsavel ou mudar pelo endpoint
+comum de status. Nao existe endpoint de exclusao fisica.
+
+Toda resposta publica de ticket, inclusive listagem, possui:
+
+```json
+{
+  "is_overdue": true,
+  "overdue_seconds": 5400
+}
+```
+
+O atraso e calculado no momento da resposta, em segundos inteiros e UTC. Um
+ticket e atrasado quando possui `due_date` anterior ao instante atual e nao esta
+`COMPLETED` nem `CANCELLED`. Nos demais casos, `is_overdue` e falso e
+`overdue_seconds` e zero. Esses campos nao existem na tabela e nao sao
+persistidos. Datetimes sem timezone vindos de bancos de teste sao tratados como
+UTC defensivamente.
+
+Esta entrega nao implementa motivo de cancelamento, exclusao fisica, filtros de
+atraso, comentarios, historico, dashboard ou filtros avancados.
+
 ## Recuperacao de senha
 
 Endpoints:

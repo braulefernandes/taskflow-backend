@@ -4,13 +4,22 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.organization import Organization
+    from app.models.ticket import Ticket
 
 
 class Category(Base):
@@ -52,3 +61,6 @@ class Category(Base):
     )
 
     organization: Mapped[Organization] = relationship(back_populates="categories")
+    tickets: Mapped[list[Ticket]] = relationship(
+        back_populates="category", passive_deletes=True
+    )

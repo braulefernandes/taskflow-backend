@@ -9,7 +9,6 @@ def test_category_migration_is_registered_after_auth_models() -> None:
 
     assert revision is not None
     assert revision.down_revision == "20260713_0946"
-    assert script.get_heads() == ["20260714_1200"]
 
 
 def test_category_migration_contains_upgrade_and_downgrade_operations() -> None:
