@@ -1000,6 +1000,29 @@ def test_cancelled_ticket_cannot_be_edited(
     assert response.json()["error"]["code"] == "cancelled_ticket_edit"
 
 
+def test_completed_ticket_allows_descriptive_edit_but_keeps_terminal_state(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    completed_at = datetime.now(UTC) - timedelta(minutes=10)
+    ticket.status = TicketStatus.COMPLETED
+    ticket.completed_at = completed_at
+    db_session.commit()
+
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={"title": "Titulo corrigido"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Titulo corrigido"
+    assert response.json()["status"] == "COMPLETED"
+    assert datetime.fromisoformat(response.json()["completed_at"]) == completed_at
+
+
 @pytest.mark.parametrize(
     ("status", "due_offset", "expected_overdue"),
     [
