@@ -86,7 +86,9 @@ def test_register_persists_user_organization_and_membership(
     post_register(client)
 
     user = db_session.scalar(select(User).where(User.email == "ana@example.com"))
-    organization = db_session.scalar(select(Organization).where(Organization.slug == "acme-suporte"))
+    organization = db_session.scalar(
+        select(Organization).where(Organization.slug == "acme-suporte")
+    )
     membership = db_session.scalar(select(OrganizationMember))
 
     assert user is not None
@@ -98,7 +100,9 @@ def test_register_persists_user_organization_and_membership(
     assert membership.is_active is True
 
 
-def test_register_stores_password_as_hash(client: TestClient, db_session: Session) -> None:
+def test_register_stores_password_as_hash(
+    client: TestClient, db_session: Session
+) -> None:
     post_register(client, password="Senha123")
 
     user = db_session.scalar(select(User).where(User.email == "ana@example.com"))
@@ -108,17 +112,26 @@ def test_register_stores_password_as_hash(client: TestClient, db_session: Sessio
     assert user.password_hash.startswith("pbkdf2_sha256$")
 
 
-def test_register_rejects_duplicate_email(client: TestClient, db_session: Session) -> None:
+def test_register_rejects_duplicate_email(
+    client: TestClient, db_session: Session
+) -> None:
     post_register(client)
-    response = post_register(client, user_name="Outra Pessoa", organization_name="Outra Org")
+    response = post_register(
+        client, user_name="Outra Pessoa", organization_name="Outra Org"
+    )
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "email_already_registered"
-    assert db_session.scalar(select(User).where(User.email == "ana@example.com")).email == "ana@example.com"
+    assert (
+        db_session.scalar(select(User).where(User.email == "ana@example.com")).email
+        == "ana@example.com"
+    )
     assert len(db_session.scalars(select(User)).all()) == 1
 
 
-def test_register_rejects_invalid_password(client: TestClient, db_session: Session) -> None:
+def test_register_rejects_invalid_password(
+    client: TestClient, db_session: Session
+) -> None:
     response = post_register(client, password="senhafraca")
 
     assert response.status_code == 422
@@ -126,7 +139,9 @@ def test_register_rejects_invalid_password(client: TestClient, db_session: Sessi
     assert db_session.scalar(select(User)) is None
 
 
-def test_register_rejects_invalid_organization_name(client: TestClient, db_session: Session) -> None:
+def test_register_rejects_invalid_organization_name(
+    client: TestClient, db_session: Session
+) -> None:
     response = post_register(client, organization_name="   ")
 
     assert response.status_code == 422
@@ -134,15 +149,23 @@ def test_register_rejects_invalid_organization_name(client: TestClient, db_sessi
     assert db_session.scalar(select(Organization)) is None
 
 
-def test_register_generates_unique_slug_on_collision(client: TestClient, db_session: Session) -> None:
-    first_response = post_register(client, email="ana@example.com", organization_name="Café Central")
-    second_response = post_register(client, email="bia@example.com", organization_name="Cafe Central")
+def test_register_generates_unique_slug_on_collision(
+    client: TestClient, db_session: Session
+) -> None:
+    first_response = post_register(
+        client, email="ana@example.com", organization_name="Café Central"
+    )
+    second_response = post_register(
+        client, email="bia@example.com", organization_name="Cafe Central"
+    )
 
     assert first_response.status_code == 201
     assert second_response.status_code == 201
     assert first_response.json()["organization"]["slug"] == "cafe-central"
     assert second_response.json()["organization"]["slug"] == "cafe-central-2"
-    assert db_session.scalars(select(Organization.slug).order_by(Organization.slug)).all() == [
+    assert db_session.scalars(
+        select(Organization.slug).order_by(Organization.slug)
+    ).all() == [
         "cafe-central",
         "cafe-central-2",
     ]

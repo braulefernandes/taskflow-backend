@@ -8,7 +8,7 @@ def test_ticket_migration_is_registered_after_categories() -> None:
 
     assert revision is not None
     assert revision.down_revision == "20260714_1200"
-    assert script.get_heads() == ["20260714_1600"]
+    assert script.get_revision("20260715_1500").down_revision == "20260714_1600"
 
 
 def test_ticket_migration_has_complete_upgrade_and_downgrade() -> None:

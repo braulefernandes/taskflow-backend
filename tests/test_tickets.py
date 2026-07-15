@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -19,11 +20,23 @@ from app.models import (
     OrganizationMember,
     OrganizationRole,
     Ticket,
+    TicketHistory,
+    TicketHistoryAction,
     TicketPriority,
     TicketStatus,
     User,
 )
+from app.repositories.ticket_history import TicketHistoryRepository
 from app.schemas import tickets as ticket_schemas
+from app.services import tickets as ticket_services
+
+
+FIXED_NOW = datetime(2026, 7, 15, 15, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def fixed_ticket_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ticket_services, "utc_now", lambda: FIXED_NOW)
 
 
 @pytest.fixture
@@ -109,7 +122,7 @@ def payload(category: Category, **overrides: object) -> dict[str, object]:
         "description": "  Liberar acesso financeiro. ",
         "category_id": str(category.id),
         "priority": "HIGH",
-        "due_date": (datetime.now(UTC) + timedelta(days=2)).isoformat(),
+        "due_date": (FIXED_NOW + timedelta(days=2)).isoformat(),
     }
     data.update(overrides)
     return data
@@ -196,9 +209,7 @@ def test_creation_rejects_past_due_date(
     response = client.post(
         "/api/v1/tickets",
         headers=headers(user, membership),
-        json=payload(
-            category, due_date=(datetime.now(UTC) - timedelta(seconds=1)).isoformat()
-        ),
+        json=payload(category, due_date=(FIXED_NOW - timedelta(seconds=1)).isoformat()),
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "due_date_in_past"
@@ -241,7 +252,7 @@ def test_admin_listing_is_paginated_isolated_and_newest_first(
         category,
         admin,
         title="Antigo",
-        created_at=datetime.now(UTC) - timedelta(days=1),
+        created_at=FIXED_NOW - timedelta(days=1),
     )
     new = create_ticket(db_session, organization, category, admin, title="Novo")
     other, other_org, _ = create_account(db_session, OrganizationRole.ADMIN)
@@ -671,7 +682,7 @@ def test_completion_and_controlled_reopening_manage_completed_at(
     category = create_category(db_session, organization)
     ticket = create_ticket(db_session, organization, category, admin, assignee=agent)
     ticket.status = TicketStatus.IN_PROGRESS
-    ticket.started_at = datetime.now(UTC) - timedelta(hours=1)
+    ticket.started_at = FIXED_NOW - timedelta(hours=1)
     db_session.commit()
 
     completed = client.patch(
@@ -795,7 +806,7 @@ def test_admin_changes_priority_and_removes_future_due_date(
     admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
     category = create_category(db_session, organization)
     ticket = create_ticket(db_session, organization, category, admin)
-    future = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    future = (FIXED_NOW + timedelta(days=3)).isoformat()
 
     changed = client.patch(
         f"/api/v1/tickets/{ticket.id}",
@@ -827,7 +838,7 @@ def test_invalid_priority_and_past_due_date_are_rejected(
     past_due = client.patch(
         path,
         headers=headers(admin, membership),
-        json={"due_date": (datetime.now(UTC) - timedelta(days=1)).isoformat()},
+        json={"due_date": (FIXED_NOW - timedelta(days=1)).isoformat()},
     )
     assert invalid_priority.status_code == 422
     assert past_due.status_code == 422
@@ -965,7 +976,7 @@ def test_completed_ticket_cannot_be_cancelled(
     category = create_category(db_session, organization)
     ticket = create_ticket(db_session, organization, category, admin)
     ticket.status = TicketStatus.COMPLETED
-    ticket.completed_at = datetime.now(UTC)
+    ticket.completed_at = FIXED_NOW
     db_session.commit()
     response = client.post(cancel_path(ticket), headers=headers(admin, membership))
     assert response.status_code == 409
@@ -1006,7 +1017,7 @@ def test_completed_ticket_allows_descriptive_edit_but_keeps_terminal_state(
     admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
     category = create_category(db_session, organization)
     ticket = create_ticket(db_session, organization, category, admin)
-    completed_at = datetime.now(UTC) - timedelta(minutes=10)
+    completed_at = FIXED_NOW - timedelta(minutes=10)
     ticket.status = TicketStatus.COMPLETED
     ticket.completed_at = completed_at
     db_session.commit()
@@ -1113,3 +1124,588 @@ def test_overdue_calculation_accepts_naive_database_datetime(
 def test_overdue_fields_are_not_persisted() -> None:
     assert "is_overdue" not in Ticket.__table__.c
     assert "overdue_seconds" not in Ticket.__table__.c
+
+
+def history_path(ticket: Ticket) -> str:
+    return f"/api/v1/tickets/{ticket.id}/history"
+
+
+def get_history(
+    client: TestClient, ticket: Ticket, user: User, membership: OrganizationMember
+) -> list[dict[str, object]]:
+    response = client.get(history_path(ticket), headers=headers(user, membership))
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_ticket_creation_records_history_with_correct_author(
+    client: TestClient, db_session: Session
+) -> None:
+    requester, organization, membership = create_account(
+        db_session, OrganizationRole.REQUESTER
+    )
+    category = create_category(db_session, organization)
+
+    created = client.post(
+        "/api/v1/tickets",
+        headers=headers(requester, membership),
+        json=payload(category),
+    )
+    ticket = db_session.get(Ticket, uuid.UUID(created.json()["id"]))
+    assert ticket is not None
+    events = get_history(client, ticket, requester, membership)
+
+    assert len(events) == 1
+    assert events[0]["action"] == "CREATED"
+    assert events[0]["author"]["id"] == str(requester.id)
+    assert "hash" not in str(events).lower()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "action", "old_value", "new_value"),
+    [
+        ("title", "Novo titulo", "TITLE_CHANGED", "Ticket", "Novo titulo"),
+        (
+            "description",
+            "Nova descricao",
+            "DESCRIPTION_CHANGED",
+            "Descricao",
+            "Nova descricao",
+        ),
+        ("priority", "HIGH", "PRIORITY_CHANGED", "MEDIUM", "HIGH"),
+    ],
+)
+def test_ticket_field_edits_record_previous_and_new_values(
+    field: str,
+    value: str,
+    action: str,
+    old_value: str,
+    new_value: str,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={field: value},
+    )
+    events = get_history(client, ticket, admin, membership)
+
+    assert response.status_code == 200
+    assert events[-1]["action"] == action
+    assert events[-1]["field_name"] == field
+    assert events[-1]["old_value"] == old_value
+    assert events[-1]["new_value"] == new_value
+
+
+def test_category_edit_records_readable_entities(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    old_category = create_category(db_session, organization)
+    new_category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, old_category, admin)
+
+    client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={"category_id": str(new_category.id)},
+    )
+    event_body = get_history(client, ticket, admin, membership)[-1]
+
+    assert event_body["action"] == "CATEGORY_CHANGED"
+    assert str(old_category.id) in event_body["old_value"]
+    assert old_category.name in event_body["old_value"]
+    assert str(new_category.id) in event_body["new_value"]
+    assert new_category.name in event_body["new_value"]
+
+
+def test_due_date_edit_records_iso_utc_and_null(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    due_date = FIXED_NOW + timedelta(days=4)
+
+    client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={"due_date": due_date.isoformat()},
+    )
+    event_body = get_history(client, ticket, admin, membership)[-1]
+
+    assert event_body["action"] == "DUE_DATE_CHANGED"
+    assert event_body["old_value"] is None
+    assert datetime.fromisoformat(event_body["new_value"]).utcoffset() == timedelta(0)
+
+
+def test_assignment_change_and_removal_use_distinct_actions(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    first, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    second, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+
+    for assignee_id in (first.id, second.id, None):
+        response = client.patch(
+            f"/api/v1/tickets/{ticket.id}/assignee",
+            headers=headers(admin, membership),
+            json={"assignee_id": str(assignee_id) if assignee_id else None},
+        )
+        assert response.status_code == 200
+
+    events = get_history(client, ticket, admin, membership)
+    assert [event["action"] for event in events] == [
+        "ASSIGNED",
+        "ASSIGNEE_CHANGED",
+        "ASSIGNEE_REMOVED",
+    ]
+    assert first.name in events[0]["new_value"]
+    assert first.name in events[1]["old_value"]
+    assert second.name in events[1]["new_value"]
+    assert events[2]["new_value"] is None
+
+
+def test_status_completion_and_reopening_do_not_duplicate_events(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin, assignee=admin)
+
+    for status in ("IN_PROGRESS", "COMPLETED", "IN_PROGRESS"):
+        response = client.patch(
+            f"/api/v1/tickets/{ticket.id}/status",
+            headers=headers(admin, membership),
+            json={"status": status},
+        )
+        assert response.status_code == 200
+
+    events = get_history(client, ticket, admin, membership)
+    assert [event["action"] for event in events] == [
+        "STATUS_CHANGED",
+        "COMPLETED",
+        "REOPENED",
+    ]
+    assert events[-1]["old_value"] == "COMPLETED"
+    assert events[-1]["new_value"] == "IN_PROGRESS"
+
+
+def test_cancellation_records_single_event(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+
+    first = client.post(cancel_path(ticket), headers=headers(admin, membership))
+    second = client.post(cancel_path(ticket), headers=headers(admin, membership))
+    events = get_history(client, ticket, admin, membership)
+
+    assert first.status_code == second.status_code == 200
+    assert len(events) == 1
+    assert events[0]["action"] == "CANCELLED"
+    assert events[0]["old_value"] == "PENDING"
+    assert events[0]["new_value"] == "CANCELLED"
+
+
+def test_history_is_ordered_and_follows_ticket_visibility(
+    client: TestClient, db_session: Session
+) -> None:
+    requester, organization, membership = create_account(
+        db_session, OrganizationRole.REQUESTER
+    )
+    other, _, other_membership = create_account(
+        db_session, OrganizationRole.AGENT, organization
+    )
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, requester)
+    late = TicketHistory(
+        ticket=ticket,
+        user=requester,
+        action=TicketHistoryAction.TITLE_CHANGED,
+        created_at=FIXED_NOW,
+    )
+    early = TicketHistory(
+        ticket=ticket,
+        user=requester,
+        action=TicketHistoryAction.CREATED,
+        created_at=FIXED_NOW - timedelta(minutes=1),
+    )
+    db_session.add_all([late, early])
+    db_session.commit()
+
+    own = client.get(history_path(ticket), headers=headers(requester, membership))
+    denied = client.get(history_path(ticket), headers=headers(other, other_membership))
+
+    assert [event["action"] for event in own.json()] == ["CREATED", "TITLE_CHANGED"]
+    assert denied.status_code == 404
+
+
+def test_history_hides_external_organization(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, _, membership = create_account(db_session, OrganizationRole.ADMIN)
+    external, external_org, _ = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, external_org)
+    ticket = create_ticket(db_session, external_org, category, external)
+
+    response = client.get(history_path(ticket), headers=headers(admin, membership))
+
+    assert response.status_code == 404
+
+
+def test_sensitive_terms_are_redacted_and_same_value_does_not_duplicate(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+    path = f"/api/v1/tickets/{ticket.id}"
+
+    changed = client.patch(
+        path,
+        headers=headers(admin, membership),
+        json={"description": "token secreto abc"},
+    )
+    unchanged = client.patch(
+        path,
+        headers=headers(admin, membership),
+        json={"description": "token secreto abc"},
+    )
+    events = get_history(client, ticket, admin, membership)
+
+    assert changed.status_code == unchanged.status_code == 200
+    assert len(events) == 1
+    assert events[0]["new_value"] == "[REDACTED]"
+    assert "abc" not in str(events)
+    assert "hash" not in str(events).lower()
+
+
+def test_ticket_change_rolls_back_when_history_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    ticket = create_ticket(db_session, organization, category, admin)
+
+    def fail_history(*args: object, **kwargs: object) -> TicketHistory:
+        raise SQLAlchemyError("history unavailable")
+
+    monkeypatch.setattr(TicketHistoryRepository, "add_event", fail_history)
+    response = client.patch(
+        f"/api/v1/tickets/{ticket.id}",
+        headers=headers(admin, membership),
+        json={"title": "Nao deve persistir"},
+    )
+    db_session.expire_all()
+
+    assert response.status_code == 500
+    assert db_session.get(Ticket, ticket.id).title == "Ticket"
+    assert db_session.query(TicketHistory).count() == 0
+
+
+def list_items(
+    client: TestClient,
+    user: User,
+    membership: OrganizationMember,
+    query: str = "",
+) -> dict[str, object]:
+    response = client.get(f"/api/v1/tickets{query}", headers=headers(user, membership))
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_listing_searches_partial_title_case_insensitively_and_trims(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    expected = create_ticket(
+        db_session, organization, category, admin, title="Relatorio Financeiro"
+    )
+    create_ticket(db_session, organization, category, admin, title="Acesso ao RH")
+
+    body = list_items(client, admin, membership, "?search=  fINANceiRO  ")
+
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(expected.id)
+
+
+@pytest.mark.parametrize(
+    ("query_name", "expected_attribute"),
+    [
+        ("status", "status"),
+        ("priority", "priority"),
+        ("category_id", "category_id"),
+        ("assignee_id", "assignee_id"),
+    ],
+)
+def test_listing_filters_status_priority_category_and_assignee(
+    query_name: str,
+    expected_attribute: str,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    assignee, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    other_category = create_category(db_session, organization)
+    expected = create_ticket(
+        db_session, organization, category, admin, assignee=assignee
+    )
+    expected.status = TicketStatus.WAITING
+    expected.priority = TicketPriority.HIGH
+    create_ticket(db_session, organization, other_category, admin)
+    db_session.commit()
+    value = getattr(expected, expected_attribute)
+    value = value.value if hasattr(value, "value") else value
+
+    body = list_items(client, admin, membership, f"?{query_name}={value}")
+
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(expected.id)
+
+
+def test_listing_filters_created_and_due_periods_inclusively(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    expected = create_ticket(db_session, organization, category, admin)
+    excluded = create_ticket(db_session, organization, category, admin)
+    expected.created_at = datetime(2026, 7, 10, 12, tzinfo=UTC)
+    expected.due_date = datetime(2026, 7, 20, 12, tzinfo=UTC)
+    excluded.created_at = datetime(2026, 7, 1, 12, tzinfo=UTC)
+    excluded.due_date = datetime(2026, 8, 1, 12, tzinfo=UTC)
+    db_session.commit()
+
+    query = (
+        "?created_from=2026-07-10T12:00:00Z&created_to=2026-07-10T12:00:00Z"
+        "&due_from=2026-07-20T12:00:00Z&due_to=2026-07-20T12:00:00Z"
+    )
+    body = list_items(client, admin, membership, query)
+
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(expected.id)
+
+
+def test_listing_filters_overdue_and_non_overdue_by_derived_rule(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    overdue = create_ticket(db_session, organization, category, admin)
+    future = create_ticket(db_session, organization, category, admin)
+    completed = create_ticket(db_session, organization, category, admin)
+    no_due_date = create_ticket(db_session, organization, category, admin)
+    overdue.due_date = FIXED_NOW - timedelta(hours=1)
+    future.due_date = FIXED_NOW + timedelta(hours=1)
+    completed.due_date = FIXED_NOW - timedelta(hours=2)
+    completed.status = TicketStatus.COMPLETED
+    db_session.commit()
+
+    overdue_body = list_items(client, admin, membership, "?overdue=true")
+    current_body = list_items(client, admin, membership, "?overdue=false")
+
+    assert [item["id"] for item in overdue_body["items"]] == [str(overdue.id)]
+    assert {item["id"] for item in current_body["items"]} == {
+        str(future.id),
+        str(completed.id),
+        str(no_due_date.id),
+    }
+
+
+def test_listing_combines_filters_and_keeps_total_consistent(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    assignee, _, _ = create_account(db_session, OrganizationRole.AGENT, organization)
+    category = create_category(db_session, organization)
+    expected = create_ticket(
+        db_session,
+        organization,
+        category,
+        admin,
+        assignee=assignee,
+        title="Falha critica financeira",
+    )
+    expected.priority = TicketPriority.URGENT
+    expected.status = TicketStatus.IN_PROGRESS
+    create_ticket(
+        db_session, organization, category, admin, title="Falha critica sem responsavel"
+    )
+    db_session.commit()
+
+    query = (
+        f"?search=critica&status=IN_PROGRESS&priority=URGENT"
+        f"&category_id={category.id}&assignee_id={assignee.id}"
+    )
+    body = list_items(client, admin, membership, query)
+
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["id"] == str(expected.id)
+
+
+def test_listing_paginates_with_total_and_total_pages(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    for index in range(5):
+        create_ticket(
+            db_session, organization, category, admin, title=f"Ticket {index}"
+        )
+
+    body = list_items(client, admin, membership, "?page=2&page_size=2")
+
+    assert body["page"] == 2
+    assert body["page_size"] == 2
+    assert body["total"] == 5
+    assert body["total_pages"] == 3
+    assert len(body["items"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("sort_by", "attribute"),
+    [("created_at", "created_at"), ("due_date", "due_date")],
+)
+def test_listing_orders_by_safe_fields_in_both_directions(
+    sort_by: str,
+    attribute: str,
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    first = create_ticket(db_session, organization, category, admin)
+    second = create_ticket(db_session, organization, category, admin)
+    setattr(first, attribute, datetime(2026, 7, 10, 12, tzinfo=UTC))
+    setattr(second, attribute, datetime(2026, 7, 20, 12, tzinfo=UTC))
+    db_session.commit()
+
+    ascending = list_items(
+        client, admin, membership, f"?sort_by={sort_by}&sort_order=asc"
+    )
+    descending = list_items(
+        client, admin, membership, f"?sort_by={sort_by}&sort_order=desc"
+    )
+
+    assert [item["id"] for item in ascending["items"]] == [
+        str(first.id),
+        str(second.id),
+    ]
+    assert [item["id"] for item in descending["items"]] == [
+        str(second.id),
+        str(first.id),
+    ]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "?status=INVALID",
+        "?priority=INVALID",
+        "?category_id=not-a-uuid",
+        "?sort_by=title",
+        "?sort_order=random",
+    ],
+)
+def test_listing_rejects_invalid_parameters(
+    query: str, client: TestClient, db_session: Session
+) -> None:
+    admin, _, membership = create_account(db_session, OrganizationRole.ADMIN)
+
+    response = client.get(f"/api/v1/tickets{query}", headers=headers(admin, membership))
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "?created_from=2026-07-20T00:00:00Z&created_to=2026-07-10T00:00:00Z",
+        "?due_from=2026-07-20T00:00:00Z&due_to=2026-07-10T00:00:00Z",
+    ],
+)
+def test_listing_rejects_reversed_periods(
+    query: str, client: TestClient, db_session: Session
+) -> None:
+    admin, _, membership = create_account(db_session, OrganizationRole.ADMIN)
+    response = client.get(f"/api/v1/tickets{query}", headers=headers(admin, membership))
+    assert response.status_code == 422
+
+
+def test_filtered_listing_preserves_organization_and_role_scope(
+    client: TestClient, db_session: Session
+) -> None:
+    agent, organization, membership = create_account(db_session, OrganizationRole.AGENT)
+    own = create_ticket(
+        db_session,
+        organization,
+        create_category(db_session, organization),
+        agent,
+        title="Visivel filtrado",
+    )
+    requester, _, _ = create_account(
+        db_session, OrganizationRole.REQUESTER, organization
+    )
+    create_ticket(
+        db_session,
+        organization,
+        create_category(db_session, organization),
+        requester,
+        title="Visivel filtrado",
+    )
+    external, external_org, _ = create_account(db_session, OrganizationRole.ADMIN)
+    create_ticket(
+        db_session,
+        external_org,
+        create_category(db_session, external_org),
+        external,
+        title="Visivel filtrado",
+    )
+
+    body = list_items(client, agent, membership, "?search=filtrado")
+
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == str(own.id)
+
+
+def test_listing_enforces_maximum_page_size(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, _, membership = create_account(db_session, OrganizationRole.ADMIN)
+    response = client.get(
+        "/api/v1/tickets?page_size=101", headers=headers(admin, membership)
+    )
+    assert response.status_code == 422
+
+
+def test_listing_order_is_stable_when_primary_sort_values_match(
+    client: TestClient, db_session: Session
+) -> None:
+    admin, organization, membership = create_account(db_session, OrganizationRole.ADMIN)
+    category = create_category(db_session, organization)
+    first = create_ticket(db_session, organization, category, admin)
+    second = create_ticket(db_session, organization, category, admin)
+    same_created_at = datetime(2026, 7, 15, 12, tzinfo=UTC)
+    first.created_at = second.created_at = same_created_at
+    db_session.commit()
+
+    first_call = list_items(client, admin, membership)
+    second_call = list_items(client, admin, membership)
+    expected_ids = sorted((str(first.id), str(second.id)), reverse=True)
+
+    assert [item["id"] for item in first_call["items"]] == expected_ids
+    assert [item["id"] for item in second_call["items"]] == expected_ids

@@ -51,7 +51,9 @@ def upgrade() -> None:
             name="uq_categories_organization_id_normalized_name",
         ),
     )
-    op.create_index("ix_categories_is_active", "categories", ["is_active"], unique=False)
+    op.create_index(
+        "ix_categories_is_active", "categories", ["is_active"], unique=False
+    )
     op.create_index(
         "ix_categories_organization_id",
         "categories",

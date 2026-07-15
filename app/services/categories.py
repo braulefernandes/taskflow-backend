@@ -17,7 +17,9 @@ from app.schemas.categories import (
 
 
 class CategoryService:
-    def __init__(self, db: Session, repository: CategoryRepository | None = None) -> None:
+    def __init__(
+        self, db: Session, repository: CategoryRepository | None = None
+    ) -> None:
         self.db = db
         self.repository = repository or CategoryRepository(db)
 

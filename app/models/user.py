@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from app.models.organization_member import OrganizationMember
     from app.models.password_reset_token import PasswordResetToken
     from app.models.ticket import Ticket
+    from app.models.ticket_comment import TicketComment
+    from app.models.ticket_history import TicketHistory
 
 
 class User(Base):
@@ -57,6 +59,12 @@ class User(Base):
         back_populates="assignee",
         foreign_keys="Ticket.assignee_id",
         passive_deletes=True,
+    )
+    ticket_comments: Mapped[list[TicketComment]] = relationship(
+        back_populates="author", passive_deletes=True
+    )
+    ticket_history: Mapped[list[TicketHistory]] = relationship(
+        back_populates="user", passive_deletes=True
     )
 
     def __repr__(self) -> str:

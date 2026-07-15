@@ -7,14 +7,24 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AuthContext
 from app.core.exceptions import AppException
-from app.models import Category, OrganizationRole, Ticket, TicketStatus
+from app.models import (
+    Category,
+    OrganizationRole,
+    Ticket,
+    TicketHistoryAction,
+    TicketStatus,
+    User,
+)
 from app.repositories.categories import CategoryRepository
-from app.repositories.tickets import TicketRepository
+from app.repositories.ticket_history import TicketHistoryRepository
+from app.repositories.tickets import TicketListCriteria, TicketRepository
 from app.schemas.tickets import (
     TicketAssigneeUpdateRequest,
     TicketCreateRequest,
+    TicketListFilters,
     TicketStatusUpdateRequest,
     TicketUpdateRequest,
+    normalize_filter_datetime,
 )
 
 
@@ -31,6 +41,7 @@ class TicketService:
         self.db = db
         self.repository = TicketRepository(db)
         self.categories = CategoryRepository(db)
+        self.history = TicketHistoryRepository(db)
 
     def create_ticket(
         self, *, context: AuthContext, payload: TicketCreateRequest
@@ -47,6 +58,12 @@ class TicketService:
                 priority=payload.priority,
                 due_date=payload.due_date,
             )
+            self.history.add_event(
+                ticket=ticket,
+                user=context.user,
+                action=TicketHistoryAction.CREATED,
+                new_value=safe_history_value(ticket.title),
+            )
             self.db.commit()
             return self.get_ticket(context=context, ticket_id=ticket.id)
         except (IntegrityError, SQLAlchemyError) as exc:
@@ -54,14 +71,30 @@ class TicketService:
             raise persistence_error() from exc
 
     def list_tickets(
-        self, *, context: AuthContext, page: int, page_size: int
+        self, *, context: AuthContext, filters: TicketListFilters
     ) -> tuple[list[Ticket], int]:
+        criteria = TicketListCriteria(
+            search=filters.search,
+            status=filters.status,
+            priority=filters.priority,
+            category_id=filters.category_id,
+            assignee_id=filters.assignee_id,
+            created_from=normalize_filter_datetime(filters.created_from),
+            created_to=normalize_filter_datetime(filters.created_to),
+            due_from=normalize_filter_datetime(filters.due_from),
+            due_to=normalize_filter_datetime(filters.due_to),
+            overdue=filters.overdue,
+            sort_by=filters.sort_by.value,
+            sort_order=filters.sort_order.value,
+            now=utc_now(),
+        )
         return self.repository.list_tickets(
             organization_id=context.organization.id,
             user_id=context.user.id,
             role=context.membership.role,
-            offset=(page - 1) * page_size,
-            limit=page_size,
+            criteria=criteria,
+            offset=(filters.page - 1) * filters.page_size,
+            limit=filters.page_size,
         )
 
     def get_ticket(self, *, context: AuthContext, ticket_id: uuid.UUID) -> Ticket:
@@ -95,14 +128,40 @@ class TicketService:
         self._ensure_can_edit(context=context, ticket=ticket)
         if payload.model_fields_set & {"priority", "due_date"}:
             self._ensure_can_change_planning(context=context, ticket=ticket)
+        new_category = None
         if "category_id" in payload.model_fields_set:
             assert payload.category_id is not None
-            self._get_active_category(context=context, category_id=payload.category_id)
+            new_category = self._get_active_category(
+                context=context, category_id=payload.category_id
+            )
         if "due_date" in payload.model_fields_set:
             self._validate_due_date(payload.due_date)
-        for field in payload.model_fields_set:
-            setattr(ticket, field, getattr(payload, field))
         try:
+            for field in payload.model_fields_set:
+                old_value = getattr(ticket, field)
+                new_value = getattr(payload, field)
+                if old_value == new_value:
+                    continue
+                if field == "category_id":
+                    assert new_category is not None
+                    old_history_value = entity_history_value(
+                        ticket.category_id, ticket.category.name
+                    )
+                    new_history_value = entity_history_value(
+                        new_category.id, new_category.name
+                    )
+                else:
+                    old_history_value = history_field_value(field, old_value)
+                    new_history_value = history_field_value(field, new_value)
+                setattr(ticket, field, new_value)
+                self.history.add_event(
+                    ticket=ticket,
+                    user=context.user,
+                    action=history_action_for_field(field),
+                    field_name=field,
+                    old_value=old_history_value,
+                    new_value=new_history_value,
+                )
             self.db.commit()
             return self.get_ticket(context=context, ticket_id=ticket.id)
         except (IntegrityError, SQLAlchemyError) as exc:
@@ -121,10 +180,19 @@ class TicketService:
                 code="completed_ticket_cancellation",
             )
 
+        previous_status = ticket.status
         ticket.status = TicketStatus.CANCELLED
-        ticket.cancelled_at = datetime.now(UTC)
+        ticket.cancelled_at = utc_now()
         ticket.completed_at = None
         try:
+            self.history.add_event(
+                ticket=ticket,
+                user=context.user,
+                action=TicketHistoryAction.CANCELLED,
+                field_name="status",
+                old_value=previous_status.value,
+                new_value=TicketStatus.CANCELLED.value,
+            )
             self.db.commit()
             return self.get_ticket(context=context, ticket_id=ticket.id)
         except (IntegrityError, SQLAlchemyError) as exc:
@@ -161,7 +229,8 @@ class TicketService:
                 code="assignee_required_for_status",
             )
 
-        now = datetime.now(UTC)
+        previous_status = ticket.status
+        now = utc_now()
         if payload.status == TicketStatus.IN_PROGRESS:
             if ticket.started_at is None:
                 ticket.started_at = now
@@ -172,6 +241,19 @@ class TicketService:
 
         ticket.status = payload.status
         try:
+            action = TicketHistoryAction.STATUS_CHANGED
+            if payload.status == TicketStatus.COMPLETED:
+                action = TicketHistoryAction.COMPLETED
+            elif previous_status == TicketStatus.COMPLETED:
+                action = TicketHistoryAction.REOPENED
+            self.history.add_event(
+                ticket=ticket,
+                user=context.user,
+                action=action,
+                field_name="status",
+                old_value=previous_status.value,
+                new_value=payload.status.value,
+            )
             self.db.commit()
             return self.get_ticket(context=context, ticket_id=ticket.id)
         except (IntegrityError, SQLAlchemyError) as exc:
@@ -220,8 +302,22 @@ class TicketService:
         if ticket.assignee_id == payload.assignee_id:
             return ticket
 
+        previous_assignee = ticket.assignee
         ticket.assignee = assignee
         try:
+            action = TicketHistoryAction.ASSIGNED
+            if assignee is None:
+                action = TicketHistoryAction.ASSIGNEE_REMOVED
+            elif previous_assignee is not None:
+                action = TicketHistoryAction.ASSIGNEE_CHANGED
+            self.history.add_event(
+                ticket=ticket,
+                user=context.user,
+                action=action,
+                field_name="assignee_id",
+                old_value=user_history_value(previous_assignee),
+                new_value=user_history_value(assignee),
+            )
             self.db.commit()
             return self.get_ticket(context=context, ticket_id=ticket.id)
         except (IntegrityError, SQLAlchemyError) as exc:
@@ -251,7 +347,7 @@ class TicketService:
         comparable = (
             due_date if due_date.tzinfo is not None else due_date.replace(tzinfo=UTC)
         )
-        if comparable <= datetime.now(UTC):
+        if comparable <= utc_now():
             raise AppException(
                 "O prazo deve estar no futuro.",
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -367,3 +463,50 @@ def persistence_error() -> AppException:
 
 def assignment_error(message: str, code: str) -> AppException:
     return AppException(message, status_code=HTTPStatus.BAD_REQUEST, code=code)
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+HISTORY_ACTION_BY_FIELD = {
+    "title": TicketHistoryAction.TITLE_CHANGED,
+    "description": TicketHistoryAction.DESCRIPTION_CHANGED,
+    "category_id": TicketHistoryAction.CATEGORY_CHANGED,
+    "priority": TicketHistoryAction.PRIORITY_CHANGED,
+    "due_date": TicketHistoryAction.DUE_DATE_CHANGED,
+}
+SENSITIVE_HISTORY_TERMS = ("password", "senha", "hash", "token", "secret", "segredo")
+
+
+def history_action_for_field(field: str) -> TicketHistoryAction:
+    return HISTORY_ACTION_BY_FIELD[field]
+
+
+def history_field_value(field: str, value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        normalized = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return normalized.astimezone(UTC).isoformat()
+    if hasattr(value, "value"):
+        return str(value.value)
+    return safe_history_value(str(value))
+
+
+def safe_history_value(value: str) -> str:
+    if any(term in value.casefold() for term in SENSITIVE_HISTORY_TERMS):
+        return "[REDACTED]"
+    if len(value) > 2000:
+        return f"{value[:1999]}…"
+    return value
+
+
+def entity_history_value(entity_id: uuid.UUID, name: str) -> str:
+    return f"{entity_id} | {safe_history_value(name)}"
+
+
+def user_history_value(user: User | None) -> str | None:
+    if user is None:
+        return None
+    return entity_history_value(user.id, user.name)

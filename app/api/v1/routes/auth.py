@@ -50,7 +50,9 @@ def reset_password(
     response_model=RegisterResponse,
     status_code=HTTPStatus.CREATED,
 )
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
+def register(
+    payload: RegisterRequest, db: Session = Depends(get_db)
+) -> RegisterResponse:
     result = AuthService(db).register(payload)
     return RegisterResponse(
         user=result.user,

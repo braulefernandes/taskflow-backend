@@ -26,7 +26,9 @@ class RegisterRequest(BaseModel):
         max_length=PASSWORD_MAX_LENGTH,
         examples=["Senha123"],
     )
-    organization_name: str = Field(min_length=1, max_length=255, examples=["Acme Suporte"])
+    organization_name: str = Field(
+        min_length=1, max_length=255, examples=["Acme Suporte"]
+    )
 
     @field_validator("user_name", "organization_name", mode="before")
     @classmethod
@@ -85,7 +87,9 @@ class RegisterResponse(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr = Field(max_length=320, examples=["ana@example.com"])
-    password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH, examples=["Senha123"])
+    password: str = Field(
+        min_length=1, max_length=PASSWORD_MAX_LENGTH, examples=["Senha123"]
+    )
 
     @field_validator("email", mode="before")
     @classmethod
