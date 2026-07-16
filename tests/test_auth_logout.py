@@ -88,7 +88,7 @@ def assert_not_authenticated(response) -> None:
     assert response.json() == {
         "error": {
             "code": "not_authenticated",
-            "message": "Nao autenticado.",
+            "message": "Não autenticado.",
         }
     }
 
@@ -148,5 +148,5 @@ def test_readme_documents_stateless_logout() -> None:
 
     assert "POST /api/v1/auth/logout" in readme
     assert "JWT stateless" in readme
-    assert "nao revoga" in readme
+    assert "não revoga" in readme
     assert "descartar o token" in readme

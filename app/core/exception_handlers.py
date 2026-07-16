@@ -57,7 +57,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return error_response(
             status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
             code="validation_error",
-            message="Dados de entrada invalidos.",
+            message="Dados de entrada inválidos.",
             details=sanitize_validation_errors(exc.errors()),
         )
 

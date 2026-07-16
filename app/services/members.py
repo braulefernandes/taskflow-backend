@@ -73,7 +73,7 @@ class MemberService:
                 organization_id=context.organization.id,
             ):
                 raise AppException(
-                    "Usuario ja pertence a esta organizacao.",
+                    "Usuário já pertence a esta organização.",
                     status_code=HTTPStatus.CONFLICT,
                     code="membership_already_exists",
                 )
@@ -92,14 +92,14 @@ class MemberService:
         except IntegrityError as exc:
             self.db.rollback()
             raise AppException(
-                "Nao foi possivel criar o membro.",
+                "Não foi possível criar o membro.",
                 status_code=HTTPStatus.CONFLICT,
                 code="member_creation_conflict",
             ) from exc
         except SQLAlchemyError as exc:
             self.db.rollback()
             raise AppException(
-                "Nao foi possivel criar o membro.",
+                "Não foi possível criar o membro.",
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 code="member_persistence_error",
             ) from exc
@@ -148,7 +148,7 @@ class MemberService:
         if self.repository.count_active_admins_for_update(context.organization.id) <= 1:
             self.db.rollback()
             raise AppException(
-                "A organizacao deve manter ao menos um administrador ativo.",
+                "A organização deve manter ao menos um administrador ativo.",
                 status_code=HTTPStatus.CONFLICT,
                 code="last_active_admin",
             )
@@ -156,7 +156,7 @@ class MemberService:
 
 def raise_member_not_found() -> None:
     raise AppException(
-        "Recurso nao encontrado.",
+        "Recurso não encontrado.",
         status_code=HTTPStatus.NOT_FOUND,
         code="resource_not_found",
     )

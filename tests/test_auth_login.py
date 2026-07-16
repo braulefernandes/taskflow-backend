@@ -101,7 +101,7 @@ def assert_invalid_credentials(response) -> None:
     assert response.json() == {
         "error": {
             "code": "invalid_credentials",
-            "message": "Credenciais invalidas.",
+            "message": "Credenciais inválidas.",
         }
     }
 

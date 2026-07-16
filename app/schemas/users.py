@@ -11,7 +11,7 @@ class UserProfileUpdateRequest(BaseModel):
     @classmethod
     def normalize_name(cls, value: str | None) -> str:
         if value is None:
-            raise ValueError("Nome invalido.")
+            raise ValueError("Nome inválido.")
         if isinstance(value, str):
             return " ".join(value.strip().split())
         return value

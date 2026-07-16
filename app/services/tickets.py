@@ -121,7 +121,7 @@ class TicketService:
             "due_date",
         }:
             raise AppException(
-                "Solicitacao cancelada nao pode ser editada.",
+                "Solicitação cancelada não pode ser editada.",
                 status_code=HTTPStatus.CONFLICT,
                 code="cancelled_ticket_edit",
             )
@@ -175,7 +175,7 @@ class TicketService:
             return ticket
         if ticket.status == TicketStatus.COMPLETED:
             raise AppException(
-                "Solicitacao concluida nao pode ser cancelada.",
+                "Solicitação concluída não pode ser cancelada.",
                 status_code=HTTPStatus.CONFLICT,
                 code="completed_ticket_cancellation",
             )
@@ -210,7 +210,7 @@ class TicketService:
         self._ensure_can_change_status(context=context, ticket=ticket)
         if payload.status not in self.STATUS_TRANSITIONS[ticket.status]:
             raise AppException(
-                "Transicao de status invalida.",
+                "Transição de status inválida.",
                 status_code=HTTPStatus.CONFLICT,
                 code="invalid_status_transition",
             )
@@ -224,7 +224,7 @@ class TicketService:
             and ticket.assignee_id is None
         ):
             raise AppException(
-                "A solicitacao deve possuir responsavel para este status.",
+                "A solicitação deve possuir responsável para este status.",
                 status_code=HTTPStatus.CONFLICT,
                 code="assignee_required_for_status",
             )
@@ -280,12 +280,12 @@ class TicketService:
                 raise not_found_error()
             if not membership.is_active:
                 raise assignment_error(
-                    "Membership do responsavel esta inativo.",
+                    "Membership do responsável está inativo.",
                     "assignee_membership_inactive",
                 )
             if not membership.user.is_active:
                 raise assignment_error(
-                    "Usuario responsavel esta inativo.",
+                    "Usuário responsável está inativo.",
                     "assignee_user_inactive",
                 )
             if membership.role not in {
@@ -294,7 +294,7 @@ class TicketService:
                 OrganizationRole.AGENT,
             }:
                 raise assignment_error(
-                    "Papel nao permitido para responsavel.",
+                    "Papel não permitido para responsável.",
                     "assignee_role_not_allowed",
                 )
             assignee = membership.user
@@ -387,7 +387,7 @@ class TicketService:
             )
         if ticket.status in {TicketStatus.COMPLETED, TicketStatus.CANCELLED}:
             raise AppException(
-                "Prioridade e prazo nao podem ser alterados em estado terminal.",
+                "Prioridade e prazo não podem ser alterados em estado terminal.",
                 status_code=HTTPStatus.CONFLICT,
                 code="terminal_ticket_planning_update",
             )
@@ -414,13 +414,13 @@ class TicketService:
     def _ensure_assignment_allowed(ticket: Ticket) -> None:
         if ticket.status == TicketStatus.CANCELLED:
             raise AppException(
-                "Solicitacao cancelada nao pode ter o responsavel alterado.",
+                "Solicitação cancelada não pode ter o responsável alterado.",
                 status_code=HTTPStatus.CONFLICT,
                 code="cancelled_ticket_assignment",
             )
         if ticket.status == TicketStatus.COMPLETED:
             raise AppException(
-                "Solicitacao concluida deve ser reaberta antes de alterar o responsavel.",
+                "Solicitação concluída deve ser reaberta antes de alterar o responsável.",
                 status_code=HTTPStatus.CONFLICT,
                 code="completed_ticket_assignment",
             )
@@ -447,7 +447,7 @@ class TicketService:
 
 def not_found_error() -> AppException:
     return AppException(
-        "Recurso nao encontrado.",
+        "Recurso não encontrado.",
         status_code=HTTPStatus.NOT_FOUND,
         code="resource_not_found",
     )
@@ -455,7 +455,7 @@ def not_found_error() -> AppException:
 
 def persistence_error() -> AppException:
     return AppException(
-        "Nao foi possivel salvar a solicitacao.",
+        "Não foi possível salvar a solicitação.",
         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         code="ticket_persistence_error",
     )

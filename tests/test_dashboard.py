@@ -71,12 +71,12 @@ def create_account(
 ) -> tuple[User, Organization, OrganizationMember]:
     unique = uuid.uuid4()
     user = User(
-        name=f"Usuario {role.value}",
+        name=f"Usuário {role.value}",
         email=f"{unique}@example.com",
         password_hash="hash",
     )
     organization = organization or Organization(
-        name="Organizacao", slug=f"org-{unique}"
+        name="Organização", slug=f"org-{unique}"
     )
     membership = OrganizationMember(
         user=user, organization=organization, role=role, is_active=True
@@ -117,7 +117,7 @@ def create_ticket(
         category=category,
         requester=requester,
         title=f"Ticket {unique}",
-        description="Descricao",
+        description="Descrição",
         status=status,
         priority=priority,
         due_date=due_date,

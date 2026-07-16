@@ -35,7 +35,7 @@ class UserService:
         except SQLAlchemyError as exc:
             self.db.rollback()
             raise AppException(
-                "Nao foi possivel atualizar o perfil.",
+                "Não foi possível atualizar o perfil.",
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 code="profile_persistence_error",
             ) from exc

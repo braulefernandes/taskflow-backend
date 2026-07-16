@@ -56,13 +56,13 @@ def create_account(
 ) -> tuple[User, Organization, OrganizationMember]:
     unique = uuid.uuid4()
     user = User(
-        name=f"Usuario {role.value}",
+        name=f"Usuário {role.value}",
         email=email or f"{unique}@example.com",
         password_hash=get_password_hash("Senha123"),
         is_active=True,
     )
     organization = organization or Organization(
-        name=f"Organizacao {unique}",
+        name=f"Organização {unique}",
         slug=f"org-{unique}",
     )
     membership = OrganizationMember(

@@ -14,7 +14,7 @@ def validate_password_strength(value: str) -> str:
     has_letter = bool(re.search(r"[A-Za-z]", value))
     has_number = bool(re.search(r"\d", value))
     if not has_letter or not has_number:
-        raise ValueError("Senha invalida.")
+        raise ValueError("Senha inválida.")
     return value
 
 

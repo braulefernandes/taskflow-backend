@@ -46,7 +46,7 @@ class TicketUpdateRequest(BaseModel):
     @classmethod
     def normalize_text(cls, value: str | None) -> str:
         if value is None:
-            raise ValueError("Campo obrigatorio nao pode ser nulo.")
+            raise ValueError("Campo obrigatório não pode ser nulo.")
         if isinstance(value, str):
             return normalize_required_text(value)
         return value
@@ -55,7 +55,7 @@ class TicketUpdateRequest(BaseModel):
     @classmethod
     def reject_null_required_fields(cls, value: object) -> object:
         if value is None:
-            raise ValueError("Campo obrigatorio nao pode ser nulo.")
+            raise ValueError("Campo obrigatório não pode ser nulo.")
         return value
 
     @model_validator(mode="after")

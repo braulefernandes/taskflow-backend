@@ -49,7 +49,7 @@ class SmtpEmailSender:
             raise EmailDeliveryError("SMTP is not configured.")
 
         message = EmailMessage()
-        message["Subject"] = "Redefinicao de senha - TaskFlow"
+        message["Subject"] = "Redefinição de senha - TaskFlow"
         message["From"] = self.settings.email_from_address
         message["To"] = to_email
         message.set_content(

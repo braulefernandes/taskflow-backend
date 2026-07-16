@@ -91,7 +91,7 @@ class PasswordResetService:
         except SQLAlchemyError as exc:
             self.db.rollback()
             raise AppException(
-                "Nao foi possivel redefinir a senha.",
+                "Não foi possível redefinir a senha.",
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 code="password_reset_persistence_error",
             ) from exc
@@ -118,7 +118,7 @@ class PasswordResetService:
 
 def invalid_reset_token_error() -> AppException:
     return AppException(
-        "Token de redefinicao invalido ou expirado.",
+        "Token de redefinição inválido ou expirado.",
         status_code=HTTPStatus.BAD_REQUEST,
         code="invalid_reset_token",
     )

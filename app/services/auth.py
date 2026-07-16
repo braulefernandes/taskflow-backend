@@ -44,7 +44,7 @@ class AuthService:
         try:
             if self.repository.get_user_by_email(payload.email) is not None:
                 raise AppException(
-                    "E-mail ja cadastrado.",
+                    "E-mail já cadastrado.",
                     status_code=HTTPStatus.CONFLICT,
                     code="email_already_registered",
                 )
@@ -81,14 +81,14 @@ class AuthService:
         except IntegrityError as exc:
             self.db.rollback()
             raise AppException(
-                "Nao foi possivel concluir o cadastro.",
+                "Não foi possível concluir o cadastro.",
                 status_code=HTTPStatus.CONFLICT,
                 code="registration_conflict",
             ) from exc
         except SQLAlchemyError as exc:
             self.db.rollback()
             raise AppException(
-                "Nao foi possivel concluir o cadastro.",
+                "Não foi possível concluir o cadastro.",
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 code="registration_persistence_error",
             ) from exc
@@ -126,7 +126,7 @@ class AuthService:
                 return candidate
 
         raise AppException(
-            "Nao foi possivel gerar um identificador para a organizacao.",
+            "Não foi possível gerar um identificador para a organização.",
             status_code=HTTPStatus.CONFLICT,
             code="organization_slug_conflict",
         )
@@ -134,7 +134,7 @@ class AuthService:
 
 def raise_invalid_credentials() -> None:
     raise AppException(
-        "Credenciais invalidas.",
+        "Credenciais inválidas.",
         status_code=HTTPStatus.UNAUTHORIZED,
         code="invalid_credentials",
     )

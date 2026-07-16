@@ -77,12 +77,12 @@ def create_account(
 ) -> tuple[User, Organization, OrganizationMember]:
     unique = uuid.uuid4()
     user = User(
-        name=f"Usuario {role.value}",
+        name=f"Usuário {role.value}",
         email=f"{unique}@example.com",
         password_hash=get_password_hash("Senha123"),
     )
     organization = organization or Organization(
-        name="Organizacao", slug=f"org-{unique}"
+        name="Organização", slug=f"org-{unique}"
     )
     membership = OrganizationMember(
         user=user, organization=organization, role=role, is_active=True
@@ -144,7 +144,7 @@ def create_ticket(
         requester=requester,
         assignee=assignee,
         title=title,
-        description="Descricao",
+        description="Descrição",
         priority=TicketPriority.MEDIUM,
     )
     if created_at is not None:
@@ -336,10 +336,10 @@ def test_admin_and_manager_can_edit(
     response = client.patch(
         f"/api/v1/tickets/{ticket.id}",
         headers=headers(editor, membership),
-        json={"title": "Novo titulo", "priority": "URGENT", "due_date": None},
+        json={"title": "Novo título", "priority": "URGENT", "due_date": None},
     )
     assert response.status_code == 200
-    assert response.json()["title"] == "Novo titulo"
+    assert response.json()["title"] == "Novo título"
     assert response.json()["priority"] == "URGENT"
 
 
@@ -1025,11 +1025,11 @@ def test_completed_ticket_allows_descriptive_edit_but_keeps_terminal_state(
     response = client.patch(
         f"/api/v1/tickets/{ticket.id}",
         headers=headers(admin, membership),
-        json={"title": "Titulo corrigido"},
+        json={"title": "Título corrigido"},
     )
 
     assert response.status_code == 200
-    assert response.json()["title"] == "Titulo corrigido"
+    assert response.json()["title"] == "Título corrigido"
     assert response.json()["status"] == "COMPLETED"
     assert datetime.fromisoformat(response.json()["completed_at"]) == completed_at
 
@@ -1164,13 +1164,13 @@ def test_ticket_creation_records_history_with_correct_author(
 @pytest.mark.parametrize(
     ("field", "value", "action", "old_value", "new_value"),
     [
-        ("title", "Novo titulo", "TITLE_CHANGED", "Ticket", "Novo titulo"),
+        ("title", "Novo título", "TITLE_CHANGED", "Ticket", "Novo título"),
         (
             "description",
-            "Nova descricao",
+            "Nova descrição",
             "DESCRIPTION_CHANGED",
-            "Descricao",
-            "Nova descricao",
+            "Descrição",
+            "Nova descrição",
         ),
         ("priority", "HIGH", "PRIORITY_CHANGED", "MEDIUM", "HIGH"),
     ],
@@ -1405,7 +1405,7 @@ def test_ticket_change_rolls_back_when_history_fails(
     response = client.patch(
         f"/api/v1/tickets/{ticket.id}",
         headers=headers(admin, membership),
-        json={"title": "Nao deve persistir"},
+        json={"title": "Não deve persistir"},
     )
     db_session.expire_all()
 
@@ -1542,7 +1542,7 @@ def test_listing_combines_filters_and_keeps_total_consistent(
     expected.priority = TicketPriority.URGENT
     expected.status = TicketStatus.IN_PROGRESS
     create_ticket(
-        db_session, organization, category, admin, title="Falha critica sem responsavel"
+        db_session, organization, category, admin, title="Falha critica sem responsável"
     )
     db_session.commit()
 
@@ -1655,7 +1655,7 @@ def test_filtered_listing_preserves_organization_and_role_scope(
         organization,
         create_category(db_session, organization),
         agent,
-        title="Visivel filtrado",
+        title="Visível filtrado",
     )
     requester, _, _ = create_account(
         db_session, OrganizationRole.REQUESTER, organization
@@ -1665,7 +1665,7 @@ def test_filtered_listing_preserves_organization_and_role_scope(
         organization,
         create_category(db_session, organization),
         requester,
-        title="Visivel filtrado",
+        title="Visível filtrado",
     )
     external, external_org, _ = create_account(db_session, OrganizationRole.ADMIN)
     create_ticket(
@@ -1673,7 +1673,7 @@ def test_filtered_listing_preserves_organization_and_role_scope(
         external_org,
         create_category(db_session, external_org),
         external,
-        title="Visivel filtrado",
+        title="Visível filtrado",
     )
 
     body = list_items(client, agent, membership, "?search=filtrado")

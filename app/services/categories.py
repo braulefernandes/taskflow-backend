@@ -142,7 +142,7 @@ class CategoryService:
 
 def duplicate_category_error() -> AppException:
     return AppException(
-        "Ja existe uma categoria com este nome na organizacao.",
+        "Já existe uma categoria com este nome na organização.",
         status_code=HTTPStatus.CONFLICT,
         code="category_already_exists",
     )
@@ -150,7 +150,7 @@ def duplicate_category_error() -> AppException:
 
 def category_not_found_error() -> AppException:
     return AppException(
-        "Recurso nao encontrado.",
+        "Recurso não encontrado.",
         status_code=HTTPStatus.NOT_FOUND,
         code="resource_not_found",
     )
@@ -158,7 +158,7 @@ def category_not_found_error() -> AppException:
 
 def category_persistence_error() -> AppException:
     return AppException(
-        "Nao foi possivel salvar a categoria.",
+        "Não foi possível salvar a categoria.",
         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         code="category_persistence_error",
     )

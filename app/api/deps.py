@@ -99,7 +99,7 @@ def extract_bearer_token(authorization: str | None) -> str:
 
 def raise_authentication_error() -> None:
     raise AppException(
-        "Nao autenticado.",
+        "Não autenticado.",
         status_code=HTTPStatus.UNAUTHORIZED,
         code="not_authenticated",
     )
