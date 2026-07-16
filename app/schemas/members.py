@@ -35,7 +35,7 @@ class MemberCreateRequest(BaseModel):
     @classmethod
     def validate_temporary_password(cls, value: str) -> str:
         if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-            raise ValueError("Senha invalida.")
+            raise ValueError("Senha inválida.")
         return value
 
 

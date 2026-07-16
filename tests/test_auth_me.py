@@ -96,7 +96,7 @@ def assert_not_authenticated(response) -> None:
     assert response.json() == {
         "error": {
             "code": "not_authenticated",
-            "message": "Nao autenticado.",
+            "message": "Não autenticado.",
         }
     }
 

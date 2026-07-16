@@ -60,13 +60,13 @@ def create_account(
 ) -> tuple[User, Organization, OrganizationMember]:
     unique = uuid.uuid4()
     user = User(
-        name=f"Usuario {role.value}",
+        name=f"Usuário {role.value}",
         email=f"{unique}@example.com",
         password_hash=get_password_hash("Senha123"),
         is_active=True,
     )
     organization = organization or Organization(
-        name=f"Organizacao {unique}",
+        name=f"Organização {unique}",
         slug=f"org-{unique}",
     )
     membership = OrganizationMember(
@@ -100,7 +100,7 @@ def create_category(
         organization=organization,
         name=name,
         normalized_name=name.casefold(),
-        description=f"Descricao {name}",
+        description=f"Descrição {name}",
         is_active=is_active,
     )
     db_session.add(category)
@@ -117,12 +117,12 @@ def test_admin_creates_normalized_category(
     response = client.post(
         "/api/v1/categories",
         headers=headers_for(admin, membership),
-        json={"name": "  Suporte   Tecnico  ", "description": "  Atendimento  "},
+        json={"name": "  Suporte   Técnico  ", "description": "  Atendimento  "},
     )
 
     assert response.status_code == 201
     assert response.json()["organization_id"] == str(organization.id)
-    assert response.json()["name"] == "Suporte Tecnico"
+    assert response.json()["name"] == "Suporte Técnico"
     assert response.json()["description"] == "Atendimento"
     assert response.json()["is_active"] is True
 

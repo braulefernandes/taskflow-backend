@@ -67,12 +67,12 @@ def decode_access_token(
     )
     expires_at = payload.get("exp")
     if not isinstance(expires_at, int):
-        raise InvalidTokenError("Token invalido.")
+        raise InvalidTokenError("Token inválido.")
     current_time = int((now or datetime.now(UTC)).timestamp())
     if expires_at <= current_time:
         raise TokenExpiredError("Token expirado.")
     if not isinstance(payload.get("sub"), str) or not payload["sub"]:
-        raise InvalidTokenError("Token invalido.")
+        raise InvalidTokenError("Token inválido.")
     return payload
 
 
@@ -88,7 +88,7 @@ def encode_jwt(
 ) -> str:
     digestmod = SUPPORTED_ALGORITHMS.get(algorithm)
     if digestmod is None:
-        raise InvalidTokenError("Algoritmo JWT nao suportado.")
+        raise InvalidTokenError("Algoritmo JWT não suportado.")
 
     header = {"typ": "JWT", "alg": algorithm}
     signing_input = ".".join(
@@ -115,17 +115,17 @@ def decode_jwt(
 ) -> dict[str, Any]:
     digestmod = SUPPORTED_ALGORITHMS.get(algorithm)
     if digestmod is None:
-        raise InvalidTokenError("Algoritmo JWT nao suportado.")
+        raise InvalidTokenError("Algoritmo JWT não suportado.")
 
     try:
         encoded_header, encoded_payload, encoded_signature = token.split(".", 2)
         header = json.loads(base64url_decode(encoded_header))
         payload = json.loads(base64url_decode(encoded_payload))
     except (ValueError, json.JSONDecodeError):
-        raise InvalidTokenError("Token invalido.") from None
+        raise InvalidTokenError("Token inválido.") from None
 
     if header.get("alg") != algorithm:
-        raise InvalidTokenError("Token invalido.")
+        raise InvalidTokenError("Token inválido.")
 
     signing_input = f"{encoded_header}.{encoded_payload}"
     expected_signature = hmac.new(
@@ -135,10 +135,10 @@ def decode_jwt(
     ).digest()
     received_signature = base64url_decode(encoded_signature)
     if not hmac.compare_digest(received_signature, expected_signature):
-        raise InvalidTokenError("Token invalido.")
+        raise InvalidTokenError("Token inválido.")
 
     if not isinstance(payload, dict):
-        raise InvalidTokenError("Token invalido.")
+        raise InvalidTokenError("Token inválido.")
     return payload
 
 
@@ -151,4 +151,4 @@ def base64url_decode(value: str) -> bytes:
     try:
         return base64.urlsafe_b64decode(f"{value}{padding}".encode("ascii"))
     except (ValueError, UnicodeEncodeError):
-        raise InvalidTokenError("Token invalido.") from None
+        raise InvalidTokenError("Token inválido.") from None

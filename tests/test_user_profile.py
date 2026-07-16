@@ -58,7 +58,7 @@ def create_account(
         password_hash=get_password_hash("Senha123"),
         is_active=user_active,
     )
-    organization = Organization(name="Organizacao", slug=f"org-{unique}")
+    organization = Organization(name="Organização", slug=f"org-{unique}")
     membership = OrganizationMember(
         user=user,
         organization=organization,
@@ -223,7 +223,7 @@ def test_profile_response_never_exposes_password_hash(
     response = client.patch(
         "/api/v1/users/me",
         headers=auth_headers(user, membership),
-        json={"name": "Nome Publico"},
+        json={"name": "Nome Público"},
     )
 
     assert response.status_code == 200

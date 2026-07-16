@@ -110,7 +110,7 @@ def create_account(
         password_hash=get_password_hash(password),
         is_active=is_active,
     )
-    organization = Organization(name="Organizacao", slug=f"org-{unique}")
+    organization = Organization(name="Organização", slug=f"org-{unique}")
     membership = OrganizationMember(
         user=user,
         organization=organization,
@@ -220,7 +220,7 @@ def test_expired_token_is_rejected(client: TestClient, db_session: Session) -> N
 def test_invalid_token_is_rejected(client: TestClient, db_session: Session) -> None:
     create_account(db_session)
 
-    response = reset_password(client, "token-que-nao-existe")
+    response = reset_password(client, "token-que-não-existe")
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_reset_token"
@@ -375,7 +375,7 @@ def test_plain_token_is_absent_from_response_and_logs(
 
 def test_development_adapter_logs_no_email_url_or_token(caplog) -> None:
     sender = DevelopmentEmailSender()
-    token = "segredo-que-nao-pode-aparecer"
+    token = "segredo-que-não-pode-aparecer"
     email = "ana@example.com"
     reset_url = f"http://localhost:3000/redefinir-senha?token={token}"
 

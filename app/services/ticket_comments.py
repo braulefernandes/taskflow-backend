@@ -28,7 +28,7 @@ class TicketCommentService:
         ticket = self.tickets.get_ticket(context=context, ticket_id=ticket_id)
         if ticket.status == TicketStatus.CANCELLED:
             raise AppException(
-                "Solicitacao cancelada nao aceita comentarios.",
+                "Solicitação cancelada não aceita comentários.",
                 status_code=HTTPStatus.CONFLICT,
                 code="cancelled_ticket_comment",
             )
@@ -51,7 +51,7 @@ class TicketCommentService:
 
 def comment_persistence_error() -> AppException:
     return AppException(
-        "Nao foi possivel salvar o comentario.",
+        "Não foi possível salvar o comentário.",
         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         code="comment_persistence_error",
     )

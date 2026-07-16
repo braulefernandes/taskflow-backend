@@ -33,7 +33,7 @@ def main() -> int:
 
     if not is_safe_test_database_url(test_database_url):
         print(
-            f"{TEST_DATABASE_URL_ENV} precisa apontar para PostgreSQL de teste e nao pode parecer producao.",
+            f"{TEST_DATABASE_URL_ENV} precisa apontar para PostgreSQL de teste e não pode parecer producao.",
             file=sys.stderr,
         )
         return 2

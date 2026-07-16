@@ -62,12 +62,12 @@ def create_account(
 ) -> tuple[User, Organization, OrganizationMember]:
     unique = uuid.uuid4()
     user = User(
-        name=f"Usuario {role.value}",
+        name=f"Usuário {role.value}",
         email=f"{unique}@example.com",
         password_hash="secret-hash",
     )
     organization = organization or Organization(
-        name="Organizacao", slug=f"org-{unique}"
+        name="Organização", slug=f"org-{unique}"
     )
     membership = OrganizationMember(
         user=user, organization=organization, role=role, is_active=True
@@ -106,7 +106,7 @@ def create_ticket(
         requester=requester,
         assignee=assignee,
         title="Ticket",
-        description="Descricao",
+        description="Descrição",
         status=status,
     )
     db.add(ticket)
@@ -131,7 +131,7 @@ def test_management_comments_on_any_organization_ticket(
     response = client.post(
         comments_path(ticket),
         headers=auth_headers(actor, membership),
-        json={"content": "Comentario gerencial"},
+        json={"content": "Comentário gerencial"},
     )
 
     assert response.status_code == 201
@@ -187,7 +187,7 @@ def test_requester_comments_on_own_ticket(
     response = client.post(
         comments_path(ticket),
         headers=auth_headers(requester, membership),
-        json={"content": "Informacao adicional"},
+        json={"content": "Informação adicional"},
     )
 
     assert response.status_code == 201
@@ -252,7 +252,7 @@ def test_cancelled_ticket_rejects_comment(
     response = client.post(
         comments_path(ticket),
         headers=auth_headers(admin, membership),
-        json={"content": "Nao permitido"},
+        json={"content": "Não permitido"},
     )
 
     assert response.status_code == 409

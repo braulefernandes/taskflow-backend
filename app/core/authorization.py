@@ -38,7 +38,7 @@ def ensure_organization_access(
 ) -> None:
     if resource_organization_id != context.organization.id:
         raise AppException(
-            "Recurso nao encontrado.",
+            "Recurso não encontrado.",
             status_code=HTTPStatus.NOT_FOUND,
             code="resource_not_found",
         )

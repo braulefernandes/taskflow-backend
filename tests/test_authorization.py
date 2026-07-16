@@ -21,14 +21,14 @@ def make_context(
 ) -> AuthContext:
     user = User(
         id=uuid.uuid4(),
-        name="Usuario",
+        name="Usuário",
         email=f"{uuid.uuid4()}@example.com",
         password_hash="hash",
         is_active=True,
     )
     organization = Organization(
         id=uuid.uuid4(),
-        name="Organizacao",
+        name="Organização",
         slug=f"org-{uuid.uuid4()}",
     )
     membership = OrganizationMember(
@@ -133,5 +133,5 @@ def test_cross_organization_resource_is_hidden() -> None:
         exception,
         status_code=404,
         code="resource_not_found",
-        message="Recurso nao encontrado.",
+        message="Recurso não encontrado.",
     )
